@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+id = "stylized_depth_of_field"
+version = "1.3.0"
+name = "Stylized Depth of Field"
+tagline = "Painterly depth of field driven by your camera"
+maintainer = "bevelbug"
+type = "add-on"
+tags = ["Compositing", "Material", "Render"]
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Load and optionally pack a brush image selected by the user"
+
+[build]
+paths_exclude_pattern = ["tests/", "__pycache__/", "*.pyc", ".git/", ".gitignore"]
