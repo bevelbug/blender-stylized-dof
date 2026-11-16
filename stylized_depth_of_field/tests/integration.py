@@ -33,6 +33,9 @@ args.work_dir.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import stylized_depth_of_field as addon
 from stylized_depth_of_field import core, migration, nodes, ui
+# Keep the established driver-binding regressions exercising the fallback.
+# Native camera evaluation is covered by the dedicated v2.1 render suite.
+nodes.camera_focus.supported = lambda tree: False
 
 checks, timings = [], {}
 

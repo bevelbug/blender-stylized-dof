@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "stylized_depth_of_field"
-version = "1.3.0"
+version = "2.1.1"
 name = "Stylized Depth of Field"
 tagline = "Painterly depth of field driven by your camera"
 maintainer = "bevelbug"

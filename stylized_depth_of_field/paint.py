@@ -47,6 +47,7 @@ def validate(instance):
     group = instance.node_tree
     if not group or group.get(ASSET_TAG) != ASSET_VERSION or not group.get('sdof_paint_root'):
         raise RuntimeError('The generated Paint Filter was replaced. Restore it or remove and rebuild the setup.')
-    for name in ('Image', 'Size', 'Simplification', 'Edge Breakup', 'Constraints', 'Use Tracking', 'Depth', 'Position'):
+    for name in ('Image', 'Size', 'Simplification', 'Edge Breakup', 'Constraints', 'Use Tracking', 'Depth', 'Position',
+                 'Sharpness', 'Accidental Colors', 'Pooling', 'Seed', 'Scale', 'Overlay Texture'):
         if instance.inputs.get(name) is None:
             raise RuntimeError('Missing Paint Filter input: ' + name + '. Reinstall the add-on and restore its generated group.')

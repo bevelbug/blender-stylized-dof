@@ -168,12 +168,15 @@ def health_report(context):
                 links = instances[0].inputs[key + ' AOV'].links
                 if len(links) != 1 or links[0].from_socket != source:
                     issues.append('Missing or changed ' + key + ' compositor pass link. Refresh Materials.')
-            if s.method == 'PAINT' and s.paint_tracking:
+            if tracking_wanted(s):
                 for flag, output, into in (('use_pass_z', 'Depth', 'Paint Depth'), ('use_pass_position', 'Position', 'Position')):
+                    if output == 'Depth' and not (s.method == 'PAINT' and s.paint_tracking):
+                        continue
                     links = instances[0].inputs[into].links
                     source = renders[0].outputs.get(output)
                     if not getattr(layer, flag) or not source or len(links) != 1 or links[0].from_socket != source:
-                        issues.append('Paint tracking needs its ' + output + ' pass. Refresh Materials, then render again.')
+                        label = 'Paint tracking' if s.method == 'PAINT' and s.paint_tracking else 'Bloom tracking'
+                        issues.append(label + ' needs its ' + output + ' pass. Refresh Materials, then render again.')
     except (ReferenceError, RuntimeError, AttributeError, TypeError, KeyError) as exc:
         issues.append(str(exc))
     mats, missing, no_uv, skipped = materials_for(context, layer)
@@ -461,10 +464,14 @@ def configured_layer(scene, journal=None, remember=True):
     return layer
 
 
+def tracking_wanted(s):
+    return (s.method == 'PAINT' and s.paint_tracking) or (s.bloom_enabled and s.bloom_tracking and s.bloom_style == 'STEPPED')
+
+
 def sync_paint_tracking(scene, journal, release=False):
-    """Use native passes only for optional Paint tracking; preserve user users."""
+    """Share tracking passes between Paint and bloom; preserve user consumers."""
     s = scene.sdof
-    wanted = not release and s.method == 'PAINT' and s.paint_tracking
+    wanted = not release and tracking_wanted(s)
     if not wanted and not (s.paint_depth_added or s.paint_position_added):
         return
     layer = configured_layer(scene, journal) if wanted else scene.view_layers.get(s.layer_name)
@@ -476,10 +483,11 @@ def sync_paint_tracking(scene, journal, release=False):
     for flag, marker, output, into in (
             ('use_pass_z', 'paint_depth_added', 'Depth', 'Paint Depth'),
             ('use_pass_position', 'paint_position_added', 'Position', 'Position')):
-        if wanted and not getattr(layer, flag):
+        pass_wanted = wanted and (output != 'Depth' or (s.method == 'PAINT' and s.paint_tracking))
+        if pass_wanted and not getattr(layer, flag):
             journal.render_pass(layer, flag, True, sources)
             journal.set(s, marker, True)
-        elif not wanted and getattr(s, marker):
+        elif not pass_wanted and getattr(s, marker):
             external = any(not (owned(link.to_node, s.token) and link.to_node.get(ROLE) == 'instance' and
                                link.to_socket.name == into) for tree, n in sources
                            for out in n.outputs if out.name == output for link in out.links)
@@ -490,6 +498,8 @@ def sync_paint_tracking(scene, journal, release=False):
         render = next(n for n in s.tree.nodes if owned(n, s.token) and n.get(ROLE) == 'render_data')
         instance = next(n for n in s.tree.nodes if owned(n, s.token) and n.get(ROLE) == 'instance')
         for output, into in (('Depth', 'Paint Depth'), ('Position', 'Position')):
+            if output == 'Depth' and not (s.method == 'PAINT' and s.paint_tracking):
+                continue
             journal.wire(s.tree, ng.socket(render.outputs, output), instance.inputs[into])
 
 

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.blend[0-9]
+*.blend[0-9][0-9]
+/dist/
+/test-output/
+/event-loop-output/
+/performance-output/
+.DS_Store
+Thumbs.db

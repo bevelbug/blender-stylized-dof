@@ -4,7 +4,7 @@ from pathlib import Path
 import bpy
 import numpy as np
 
-from stylized_depth_of_field import core, nodes
+from stylized_depth_of_field import core, nodes, looks, refinements
 from stylized_depth_of_field.transaction import Journal
 
 
@@ -17,9 +17,10 @@ def legacy_radius_graph(s):
     source = nodes.find(tree, 'Render and Surface Data').outputs['Image']
     for key in ('Bilateral', 'Bilateral Soft', 'Kuwahara'):
         nodes.wire(tree, source, nodes.find(tree, key).inputs['Image'])
+    nodes.wire(tree, nodes.find(tree, 'Enabled Result').outputs[0], nodes.find(tree, 'Effect Bypass').inputs['Switch'])
     for n in list(tree.nodes):
-        if n.get(nodes.KEY) in nodes.DEFOCUS_NODES or n.get(nodes.KEY) in nodes.PAINT_NODES:
-            if n.get(nodes.KEY) in nodes.NEW_CONTROLS:
+        if n.get(nodes.KEY) in nodes.DEFOCUS_NODES or n.get(nodes.KEY) in nodes.PAINT_NODES or n.get(nodes.KEY) in looks.CONTROLS or n.get(nodes.KEY) in refinements.CONTROLS or n.get(nodes.KEY) in refinements.NODES or n.get(nodes.KEY) in nodes.edges.NODES:
+            if n.get(nodes.KEY) in nodes.NEW_CONTROLS or n.get(nodes.KEY) in looks.CONTROLS or n.get(nodes.KEY) in refinements.CONTROLS or n.get(nodes.KEY) in nodes.edges.CONTROLS:
                 n.outputs[0].driver_remove('default_value')
             tree.nodes.remove(n)
     for item in list(tree.interface.items_tree):
@@ -159,9 +160,9 @@ def run(addon, check, reset, render, LayoutProbe, Reporter, work_dir):
     check('failed radius upgrade rolls back nodes and schema', ids == [n.as_pointer() for n in s.effect_tree.nodes] and nodes.GRAPH_VERSION not in s.effect_tree)
     check('failed radius upgrade restores all old filter links', all(nodes.find(s.effect_tree, key).inputs[into].links[0].from_node.get(nodes.KEY) == 'Maximum Radius' for key, into in (('Bilateral', 'Size'), ('Soft Radius', 0), ('Depth Driven Radius', 1))))
     nodes.upgrade_effect(s.effect_tree, s)
-    check('in-place upgrade adds the versioned features and preserves drivers', len(s.effect_tree.nodes) == len(ids) + 1 + len(nodes.DEFOCUS_NODES) and curve_id == nodes.binding(nodes.find(s.effect_tree, 'Maximum Radius').outputs[0]).as_pointer())
+    check('in-place upgrade adds the versioned features and preserves drivers', len(s.effect_tree.nodes) == len(ids) + 1 + len(nodes.DEFOCUS_NODES) + len(looks.CONTROLS) + len(refinements.CONTROLS) + len(refinements.NODES) + len(nodes.edges.NODES) and curve_id == nodes.binding(nodes.find(s.effect_tree, 'Maximum Radius').outputs[0]).as_pointer())
     nodes.upgrade_effect(s.effect_tree, s)
-    check('repeat upgrade is idempotent', len(s.effect_tree.nodes) == len(ids) + 1 + len(nodes.DEFOCUS_NODES))
+    check('repeat upgrade is idempotent', len(s.effect_tree.nodes) == len(ids) + 1 + len(nodes.DEFOCUS_NODES) + len(looks.CONTROLS) + len(refinements.CONTROLS) + len(refinements.NODES) + len(nodes.edges.NODES))
     s.effect_tree.nodes.remove(nodes.find(s.effect_tree, 'Effective Radius'))
     check('deleted upgraded radius node is diagnosed instead of silently rebuilt', core.execute_refresh(Reporter(), bpy.context) == {'CANCELLED'} and 'Effective Radius' in s.last_error)
 

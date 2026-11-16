@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.1
+
+- Added Protect Sharp Edges for additional Defocus. Sharp silhouettes are excluded from the blur source, with surrounding colors extended behind them before blurring and painting. The final blend retains the original sharp image.
+- Works with all three painterly methods and Gaussian, round and polygon blur. The protection starts on; turn it off to restore the earlier filtering behavior.
+- Defocus zero bypasses the added processing. Original alpha, HDR colors, camera focus animation and bloom settings are retained.
+- Existing setups upgrade in place with reversible graph changes. No additional material outputs or render-time Python handlers.
+- Added rendered regressions for high-contrast outlines, thin and antialiased silhouettes, large radii, alpha, CPU/GPU compositing, motion and older saved graphs.
+
+## 2.1.0
+
+- Add optional actual-input-width scaling for filter/stroke radius and Defocus, with a 1920 px reference by default. Keep existing fixed-pixel behavior unless enabled.
+- Use native Active Camera/Camera Info for camera focus where supported. Preserve the existing control curve as a muted fallback; retain manual focus and the driver path. Test camera replacement, rotated/scaled cameras, off-axis targets and bone animation in both Blender 5.2 and 5.3.
+- Add Glow Exposure before stepping and a Falloff curve to reveal faint outer halos. Expose the complete Spread range in normal dragging, expand Amount, and rename Steps to Band Density to describe its actual behavior. Neutral new controls preserve ordinary v2.0 looks.
+- Add Bloom Only preview and a panel button to inspect bands on black, with saved-output and transparency explanations.
+- Decouple bloom from painterly Strength/Radius. Global Enable Effect still bypasses everything; zero Amount bypasses bloom. No material/AOV setup simplification is included.
+- Upgrade older graphs transactionally, diagnose damaged fixed links before reconfiguration, retain native animation and bypass efficiency, and add 1080p/4K, high-gain, native focus, upgrade and Undo checks.
+
+## 2.0.0
+
+- Expose the bundled Paint Filter's Watercolor, Oil Paint and Digital Geometric brush styles, brush sharpness, hue variation, pigment pooling, fixed seed, canvas/paper choice, grain scale and amount. Retain v1.3 defaults and the original CC0 asset.
+- Add optional round and polygonal aperture blur before painting, with blade count, rotation and roundness. Keep the existing Gaussian default. Convolution is scalar-radius and focus-mask blended; it does not reconstruct occluded background.
+- Add optional Soft and Stepped Paint bloom. Use smooth highlight extraction, hue-preserving HDR brightness bands, softened transitions and fixed-seed texture breakup. Keep incoming alpha and bypass all extra processing when disabled or zeroed.
+- Optional bloom tracking uses native Position on static surfaces, sharing the pass with Paint. Depth is requested only by tracked Paint. Preserve pre-existing passes and external consumers on mode changes/removal. No temporal cache, external dependencies or per-frame Python handlers.
+- Group controls into Brush, Canvas, Defocus Shape and Bloom sections; add tooltips and offline help for the new controls and animation limits. Custom image mapping, look presets and additional artistic modes remain outside this release.
+- Upgrade intact older graphs transactionally in place, retaining existing nodes, drivers, settings and animation paths. Keep new effects opt-in. Add native Cycles CPU/GPU renders, repeated/reverse-frame tests, a short camera animation, save/reopen, recovery, default-pixel comparisons, native Undo snapshots and compositor timing fixtures.
+
 ## 1.3.0
 
 - Add **Paint Filter** alongside Bilateral and Kuwahara, using Pau Homs' pinned Blender Essentials CC0 asset. Load it lazily and save its required groups locally in the blend; no render-time downloads or machine-specific asset paths.

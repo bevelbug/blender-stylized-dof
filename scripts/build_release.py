@@ -23,7 +23,7 @@ def main():
         parser.error(f"{output} already exists. Choose a fresh output directory.")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    with TemporaryDirectory(prefix="sdof-build-") as temporary:
+    with TemporaryDirectory(prefix="sdof-build-", dir=output.parent) as temporary:
         staging = Path(temporary) / package.name
         shutil.copytree(package, staging, ignore=shutil.ignore_patterns(
             "tests", "__pycache__", "*.pyc", "*.pyo", "*.blend[0-9]*"

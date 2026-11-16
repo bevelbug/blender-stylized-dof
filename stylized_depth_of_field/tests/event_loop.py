@@ -23,7 +23,7 @@ addon = addon_utils.enable('stylized_depth_of_field', default_set=False, handle_
 assert addon and not errors
 assert bpy.app.timers.is_registered(addon._initialize_once)
 old_count = len(bpy.context.scene.sdof.effect_tree.nodes) if args.previous_blend else 0
-old_version = bpy.context.scene.sdof.effect_tree.get(addon.ng.GRAPH_VERSION, 1) if args.previous_blend else 3
+old_version = bpy.context.scene.sdof.effect_tree.get(addon.ng.GRAPH_VERSION, 1) if args.previous_blend else 5
 phase = 0
 material_names = []
 
@@ -46,18 +46,43 @@ def step():
                 check('one-shot initialization ran and stopped', not bpy.app.timers.is_registered(addon._initialize_once))
                 if args.previous_blend:
                     tree = scene.sdof.effect_tree
-                    check('deferred enable upgrades an already open older setup', tree.get(addon.ng.GRAPH_VERSION) == 3 and len(tree.nodes) == old_count + (1 if old_version < 2 else 0) + (len(addon.ng.DEFOCUS_NODES) if old_version < 3 else 0))
+                    added = (1 if old_version < 2 else 0) + (len(addon.ng.DEFOCUS_NODES) if old_version < 3 else 0) + (len(addon.ng.looks.CONTROLS) if old_version < 4 else 0)
+                    if old_version < 5:
+                        added += len(addon.ng.refinements.CONTROLS) + len(addon.ng.refinements.NODES)
+                        if addon.ng.camera_focus.active(tree):
+                            added += 2
+                        if addon.ng.looks.has(tree, 'Bloom Bypass'):
+                            added += 5
+                    if old_version < 6:
+                        added += len(addon.ng.edges.NODES)
+                    check('deferred enable upgrades an already open older setup', tree.get(addon.ng.GRAPH_VERSION) == addon.ng.looks.VERSION and len(tree.nodes) == old_count + added)
                     check('deferred upgrade retains a healthy saved setup', addon.core.health_report(bpy.context).startswith('Checks passed'))
                     bpy.ops.sdof.remove()
+                    # The upgrade fixture may have keyed look controls. Start
+                    # the independent Undo scenario without those scene keys.
+                    scene.animation_data_clear()
                 scene.render.engine = 'CYCLES'
                 bpy.ops.ed.undo_push(message='Disposable initial scene')
                 bpy.ops.sdof.setup()
                 check('native event-loop setup', addon.core.installed(scene))
                 scene.sdof.method, scene.sdof.paint_tracking, scene.sdof.defocus = 'PAINT', True, 4
                 check('native event-loop Paint tracking prepares passes', not scene.sdof.last_error and scene.view_layers[0].use_pass_z and scene.view_layers[0].use_pass_position)
+                scene.sdof.bloom_enabled, scene.sdof.bloom_tracking = True, True
+                scene.sdof.bokeh_shape = 'POLYGON'
+                check('native event-loop v2 effects build cleanly', not scene.sdof.last_error and addon.ng.looks.has(scene.sdof.effect_tree, 'Bloom Bypass') and addon.ng.looks.has(scene.sdof.effect_tree, 'Aperture Blur'))
                 material_names[:] = [m.name for m in bpy.data.materials if m.node_tree and any(
                     addon.core.owned(n, scene.sdof.token) for n in m.node_tree.nodes)]
             elif phase == 1:
+                bpy.ops.ed.undo_push(message='Final effect preview')
+                bpy.ops.sdof.preview_bloom()
+                bpy.ops.ed.undo_push(message='Bloom only preview')
+                bpy.ops.ed.undo()
+                check('bloom preview Undo restores final output', bpy.context.scene.sdof.preview == 'RESULT')
+                bpy.ops.ed.redo()
+                check('bloom preview Redo restores isolated glow', bpy.context.scene.sdof.preview == 'BLOOM')
+                bpy.ops.sdof.preview_bloom()
+                check('bloom preview button returns to final output', bpy.context.scene.sdof.preview == 'RESULT')
+                scene = bpy.context.scene
                 scene.render.use_compositing = False
                 bpy.ops.ed.undo_push(message='Compositing disabled')
                 bpy.ops.sdof.enable_compositing()
@@ -123,6 +148,7 @@ def step():
                 bpy.ops.ed.undo()
                 scene = bpy.context.scene
                 check('complete removal Undo restores bundled Paint graph', addon.core.installed(scene) and addon.core.health_report(bpy.context).startswith('Checks passed'))
+                check('complete removal Undo restores v2 controls and graphs', scene.sdof.bloom_enabled and scene.sdof.bokeh_shape == 'POLYGON' and addon.ng.looks.has(scene.sdof.effect_tree, 'Bloom Bypass') and addon.ng.looks.has(scene.sdof.effect_tree, 'Aperture Blur'))
                 check('complete removal Undo restores native tracking passes', scene.view_layers[0].use_pass_z and scene.view_layers[0].use_pass_position)
                 bpy.ops.ed.redo()
                 check('complete removal Redo clears tracking and owned assets', not bpy.context.scene.sdof.token and not bpy.context.view_layer.use_pass_position and not any(g.get('sdof_paint_asset') for g in bpy.data.node_groups))

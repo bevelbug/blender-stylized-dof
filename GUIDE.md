@@ -1,37 +1,87 @@
 # Stylized Depth of Field
 
-A Blender extension for camera-driven painterly focus. Choose surface-guided Bilateral, anisotropic Kuwahara, or Blender Essentials Paint Filter. Optional Defocus adds stronger softness through the same camera focus mask.
+A Blender extension for camera-driven painterly focus. Choose surface-guided Bilateral, anisotropic Kuwahara, or Blender Essentials Paint Filter. Optional aperture blur adds stronger defocus; Soft or Stepped Paint bloom adds colored highlight washes.
 
-**Version 1.3.0 · Blender 5.2 or newer · GPL-3.0-or-later**
+**Version 2.1.1 · Blender 5.2 or newer · GPL-3.0-or-later**
 
-The extension uses native Blender nodes and drivers. It needs no external Python packages, online service, fixed installation directory, or platform-specific executable. A compressed CC0 Paint Filter node asset is bundled locally; it is loaded only when Paint Filter is selected. Blender 5.2.0 LTS on Windows is the verified runtime. Later versions are allowed by the manifest and checked for required APIs during setup; they have not been independently tested.
+The extension uses native Blender nodes and drivers. It needs no external Python packages, online service, fixed installation directory, or platform-specific executable. A compressed CC0 Paint Filter node asset is bundled locally; it is loaded only when Paint Filter is selected. Blender 5.2.0 LTS and 5.3.0 on Windows are verified runtimes. Later versions are allowed by the manifest and checked for required APIs during setup; they have not been independently tested.
 
 ## Install
 
-1. Keep `Stylized_Depth_of_Field_v1.3.0.zip` zipped.
+1. Keep `Stylized_Depth_of_Field_v2.1.1.zip` zipped.
 2. In Blender, open **Edit → Preferences → Add-ons → Install from Disk**.
 3. Select the ZIP and enable **Stylized Depth of Field**.
 4. Press **N** in the 3D View or Compositor and open **Stylized DOF**.
 
 The source archive is for development. Use the install ZIP for **Install from Disk**.
 
-If installing 1.2.0 reported `'_RestrictData' object has no attribute 'scenes'`, save your work and restart Blender, then install this corrected 1.3.0 ZIP. The failure was in add-on enabling; rebuilding scene setups is not required.
+## Upgrade from 1.1.x through 2.1.0
 
-## Upgrade from 1.1.x or 1.2.x
+Save a copy of the shot, install 2.1.1, restart Blender and reopen the saved file. Intact setups upgrade in place. Existing settings, animation paths, numeric control curves and compositor edits are retained. Existing aperture and bloom choices are kept. Protect Sharp Edges starts on and affects shots using additional Defocus; turn it off to restore the previous filtering behavior. Resolution scaling starts off for older setups; Glow Exposure 0 and Falloff 1 retain normal v2.0 bloom brightness placement. Native camera nodes replace the active focus source where supported; the previous focus F-curve is retained and muted for fallback/manual use.
 
-Update the same extension to 1.3.0 and reopen the saved `.blend` file. Existing 1.1.x and 1.2.x setups load directly; no rebuild or legacy migration is required. Rendering defaults, saved settings and animation paths are unchanged. Intact older effect groups receive the versioned Defocus controls and inputs in place on file load or deferred enabling; existing nodes, keyframes, drivers and compositor edits are retained. No rebuild is needed. A damaged generated graph is diagnosed before upgrade edits are committed. Some display labels are shorter to fit narrow sidebars. Generated nodes receive persistent lookup keys as they are used, so later internal renaming does not break the controls. Nodes already renamed before the upgrade may still need their original names restored if they have no saved lookup key.
+**Behavior change:** painterly Strength or Radius zero disables painting while leaving enabled bloom available. Use Bloom Amount zero to remove glow, or Enable Effect off to bypass everything. Keep an older blend copy to return to an older add-on: files saved with the new edge-protection graph need 2.1.1 or later to edit their setup.
+
+Damaged generated nodes/links are diagnosed before upgrade changes commit. Hand edits inside generated groups are not part of the supported editing interface. Persistent keys permit renaming intact generated nodes. Newer Blender files are not assumed to open in older Blender versions even when the add-on supports both.
 
 ## Stronger focus and Paint Filter
 
-**Defocus (px)** adds Gaussian softness before the chosen painterly filter, blended through the existing focus mask. It defaults to **0**, preserving earlier looks. Try **4–8 px** to remove more photographic detail, and increase gradually. The original sharp region and incoming alpha are retained. This is an artistic screen-space effect; it does not reconstruct hidden background detail or guarantee halo-free silhouettes.
+**Defocus (px)** defaults to Gaussian softness before the chosen painterly filter, blended through the existing focus mask. It defaults to **0**, preserving earlier looks. Try **4–8 px** to remove more photographic detail, and increase gradually. The original sharp region and incoming alpha are retained. This is an artistic screen-space effect; it does not reconstruct hidden background detail or guarantee halo-free silhouettes.
 
-**Method → Paint Filter** adds Blender Essentials brushwork. Start with a **Stroke Size of 12–20 px**, Strength 1, and Simplification around 2–4. Simplification reduces detail inside the paint filter. Advanced contains Edge Breakup and depth-edge protection. Higher values can erase detail and cost more. Paint uses its own procedural textures: editing Alembic UVs is not needed for its basic brushwork. The Surface Guide and brush-image controls remain specific to Bilateral.
+**Protect Sharp Edges** appears below Defocus when its amount is above zero. It removes sharp silhouettes from the filtering input, extends surrounding colors into the holes, then applies Defocus and painting before the original sharp subject is blended back. This reduces the soft duplicate outline around a focused object. It works with Soft / Fast, Round and Aperture shapes in all three painterly modes. It starts on; off restores the earlier behavior. Defocus zero bypasses this processing. Background extension is an approximation: extreme blur, subpixel details, transparent surfaces and large depth discontinuities still need shot checks. Bloom can intentionally spread bright colors and is separate from this protection.
 
-**Advanced → Position Tracking** optionally uses the configured layer's native **Position and Depth** passes. Enable it, then render again with F12. Position provides world-space brush placement; Depth supplies the asset's distance information. This can help with camera movement and different object scales. A moving/deforming object, including an Alembic cache, can still move through the world-space pattern; this is not rest-position or deformation tracking.
+**Method → Paint Filter** adds Blender Essentials brushwork. Start with a **Stroke Size of 12–20 px**, Strength 1, and Simplification around 2–4. Simplification reduces detail inside the paint filter. Brush and Canvas contain style controls and Edge Breakup; depth-edge protection remains in Advanced. Higher values can erase detail and cost more. Paint uses its own procedural textures: editing Alembic UVs is not needed for its basic brushwork. The Surface Guide and brush-image controls remain specific to Bilateral.
 
-Tracking is off by default. Passes enabled by this add-on are released when leaving tracked Paint or removing/detaching the setup, unless user compositor nodes also use them. Passes enabled before the add-on are preserved. Use Add / Refresh Materials to repair missing tracking links/passes, then rerender. Enabling passes cannot add them retroactively to an old render.
+**Brush → Position Tracking** optionally uses the configured layer's native **Position and Depth** passes. Enable it, then render again with F12. Position provides world-space brush placement; Depth supplies the asset's distance information. This can help with camera movement and different object scales. A moving/deforming object, including an Alembic cache, can still move through the world-space pattern; this is not rest-position or deformation tracking.
+
+Tracking is off by default. Tracking shares Position with optional bloom tracking. Depth is requested only for tracked Paint. Passes added by the add-on are released when no effect needs them or on removal/detachment, unless user compositor nodes also use them. Passes enabled before the add-on are preserved. Use Add / Refresh Materials to repair missing tracking links/passes, then rerender. Enabling passes cannot add them retroactively to an old render.
 
 Paint Filter and all its helper groups are stored locally in the saved blend. They are not downloaded at registration or render time. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for Pau Homs' CC0 asset credit, source and pinned hashes. GPU compositing is recommended for large Paint renders where supported; CPU processing of this asset is substantially more expensive.
+
+## Paint styles and canvas
+
+**Brush Style** chooses Watercolor, Oil Paint or Digital Geometric from the bundled asset. In **Brush**, Sharpness controls how closely shapes follow the brush texture; it is not an ordinary sharpening filter. Color Variation shifts hue per stroke. Pigment Pooling darkens stroke edges. Keep the Brush Seed fixed throughout a shot. The old Watercolor, sharpness 0.6, color variation 0.2 and pooling 0.1 defaults are retained.
+
+**Canvas** offers Canvas, Rough Paper or None. Texture Amount overlays grain; zero hides the overlay but retains canvas-driven Edge Breakup. None removes the pattern and that breakup. Higher Texture Scale gives finer grain. Custom brush/canvas images in Paint Filter are deferred; the existing Bilateral brush-image controls remain available for its surface guide.
+
+## Aperture blur
+
+**Defocus Shape → Blur Shape** offers Soft / Fast, Round Bokeh and Aperture Bokeh. Raise the main Defocus amount above zero. Aperture Bokeh adds blade count, rotation and roundness; roundness 1 approaches a circle. Shapes can be softened or changed by the painterly filter afterward.
+
+The aperture uses a uniform-radius convolution blended through the focus mask, preserving the sharp zone and incoming alpha. It is an artistic compositor blur, not a camera optics solver or occlusion reconstruction. Strong settings can spill foreground colors across silhouettes. Square-looking filter patches can originate from Bilateral/Kuwahara sampling rather than the aperture. Keep the camera's optical DOF off unless you intentionally want both effects.
+
+## Bloom
+
+Enable **Bloom**, choose **Soft** or **Stepped Paint**, then use **Preview Bloom Only** to inspect the glow on black. Return to Final Effect before rendering your final image or animation: previews also change saved output.
+
+For a broad, clearly stepped starting point try Amount **0.2–0.4**, Spread **0.3–0.6**, Glow Exposure **+3 to +4**, Falloff **0.7–0.8**, Band Density **2–3**, and Edge Softness **0.35–0.6**. These are artistic starting values, not universal settings; your highlight brightness still matters.
+
+- **Spread:** spatial reach relative to the image. Its full 0–1 range is available by dragging. Larger spreads distribute a small light's energy more thinly.
+- **Glow Exposure:** brightness boost BEFORE stepping, in stops. +1 doubles that signal. This reveals faint outer bands that raising Amount could not recover in 2.0. Zero retains old placement.
+- **Falloff:** shapes glow brightness before stepping. Below 1 lifts faint outer tails for a fuller halo; above 1 concentrates it. Default 1 preserves the previous curve.
+- **Amount:** final intensity AFTER stepping. Its range is expanded to 32. Zero skips bloom processing. High settings can wash out the image; work upward from a small value.
+- **Highlight Threshold:** scene-linear brightness contributing to glow, with a smooth transition. Increase it if too many diffuse surfaces glow; reduce it if the intended lights do not contribute.
+- **Band Density:** brightness levels per stop, not an exact count of spatial rings. Lower gives broader bands. Use Glow Exposure to move where bands appear and Falloff to reshape their distribution.
+- **Edge Softness:** transition width between bands. Softer boundaries are safer for animation; very hard bands can pop as highlights move/change.
+- **Painterly Breakup:** fixed irregularity along the band boundaries. Start low for animation.
+- **Texture:** scale, fixed seed and optional Position Tracking. Tracking is world-space placement on static surfaces, with screen coordinates on empty background. Render again after enabling it. Moving/deforming geometry can slide through the pattern; glow beyond a silhouette has no matching surface position.
+
+Bloom is an image-space effect; the physical size of a scene does not directly set its halo size. It affects highlights across the frame, including the focused subject and world. Bloom works with painting Strength or Radius zero. Enable Effect off bypasses everything.
+
+Original alpha is preserved. A transparent background or an upstream alpha mask can hide parts of a halo in the final alpha composite; Bloom Only is opaque so you can inspect the full glow. Alpha expansion, a focus-only glow scope and custom Paint image mapping are outside this update.
+
+## Resolution scaling
+
+In **Advanced**, enable **Scale with Resolution**. The default Reference Width is **1920**: an 8 px reference radius becomes 16 px on a 3840-wide image, and 4 px on a 960-wide image. Stroke/filter radius and additional Defocus scale together. Bloom Spread is already image-relative.
+
+Sizing uses actual input width, including render percentage. Labels change to **ref px** when enabled. Leave the checkbox off for fixed pixel sizes. Scene units, guide UV density and individual object scale are not changed. Existing image/pass framing restrictions still apply. Larger images and radii increase processing cost; this keeps the look consistent, not the render time.
+
+## Animation workflow
+
+Camera focus distance, focal length, focus-target/bone motion and numeric look controls evaluate through Blender's native drivers/nodes. Use one camera per scene. Native camera nodes follow camera/target/bone changes automatically on supported builds. Sync Active Camera remains a repair/fallback action. Optical camera DOF may remain off.
+
+Keep style selectors, texture seeds, Band Density and tracking choices fixed for a shot. Numeric paint, bokeh and bloom controls marked with native keyframe decorations can be animated. Configuration choices are not intended for animation. Turn on tracking before rendering the sequence, then use a fresh full render so the required passes exist.
+
+World tracking helps camera moves across static scenery. It is not deformation/rest-position tracking for Alembic and does not guarantee flicker-free strokes or glow. Use moderate breakup, softened band edges and adequately sampled/denoised Cycles highlights. Render a short section containing your brightest lights and fastest movement before a long sequence. Repeated-frame tests verify that the add-on has no previous-frame history, but they do not prove every scene is temporally artifact-free.
 
 ## Upgrade an existing v1 setup
 
@@ -62,13 +112,13 @@ Turn **Foreground** off for background-only stylization. The camera's focus obje
 
 ## Panel and help
 
-The main controls cover enabling the effect, method, radius, strength and preview. **Focus** opens by default. **Surface Guide**, **Advanced**, and **Setup & Maintenance** start collapsed; Blender remembers their open state in the editor region. Surface Guide and Bilateral-specific Advanced controls are shown for Bilateral only. Advanced also exposes Blender's native CPU/GPU compositor choice for either method; setup and refresh preserve the selected device. Existing guide settings are retained when changing methods.
+The main controls cover enabling the effect, method, radius, strength and preview. **Focus** opens by default. **Brush**, **Canvas**, **Defocus Shape**, **Bloom**, **Surface Guide**, **Advanced**, and **Setup & Maintenance** start collapsed; Blender remembers their open state in the editor region. Surface Guide and Bilateral-specific Advanced controls are shown for Bilateral only. Advanced also exposes Blender's native CPU/GPU compositor choice for either method; setup and refresh preserve the selected device. Existing guide settings are retained when changing methods.
 
 Hover controls and action buttons for explanations, suggested starting values and rerender requirements. These are Blender's native tooltips: visibility and delay follow your Blender preferences. The extension does not change those preferences or use a hover timer. Native keyframe decorations remain available for animated controls.
 
-**Help** stays available before setup and during error, migration or shared-scene recovery. It opens an offline popup with Getting Started, Focus, Surface Guides, Quality & Performance, and Troubleshooting topics. Choose a topic in the dropdown; click outside or press Escape to close. **Setup Report** opens the last build or refresh report, rather than performing a new scan. **Check Setup** runs a current, read-only inspection of focus, controls, generated links, passes, materials, compositor state and brush-file availability. These checks run on request, without adding frame handlers.
+**Help** stays available before setup and during error, migration or shared-scene recovery. It opens an offline popup with Paint & Bokeh, Bloom & Animation, Getting Started, Focus, Surface Guides, Quality & Performance, and Troubleshooting topics. Choose a topic in the dropdown; click outside or press Escape to close. **Setup Report** opens the last build or refresh report, rather than performing a new scan. **Check Setup** runs a current, read-only inspection of focus, controls, generated links, passes, materials, compositor state and brush-file availability. These checks run on request, without adding frame handlers.
 
-You can choose the camera's **Focus Object** directly in Focus. A **Sync Active Camera** button appears when the source differs from the saved binding or its driver is invalid, including a deleted target. Refresh also rebinds focus; deleting a focus object then falls back to the camera distance. A missing bone must be corrected first. It is also available in Setup & Maintenance for manually refreshing a camera binding. Moving the bound target or changing the bound distance does not need another sync. Disabled Foreground/Background sides grey their corresponding falloff control.
+Choose **Focus Object** directly in Focus. Native camera nodes read the current camera's distance, target and bone without per-frame Python. They update automatically after source changes. Missing bones remain an actionable error. The established driver path is retained as a fallback, and manual distance still uses native property drivers. Sync Active Camera or Refresh repairs bindings when needed. Disabled Foreground/Background sides grey their falloff control.
 
 **Preview changes the saved render output too.** Return to **Final Effect** before producing a final image or animation. Diagnostic previews, a bypassed effect, disabled scene compositing and disconnected output show status notices. **Enable Compositing** deliberately restores Blender's scene-level compositor switch. If another compositor is active, **Restore Configured Compositor** switches back to the saved setup where its output links are intact, leaving the alternative group available. A damaged saved output needs its links restored or the setup removed and rebuilt.
 
@@ -77,14 +127,14 @@ You can choose the camera's **Focus Object** directly in Focus. A **Sync Active 
 | Control | Behavior |
 | --- | --- |
 | Camera Focus | Use the camera's distance or project its focus object/bone onto the camera axis |
-| Sync Active Camera | Rebind after changing the camera, focus object or bone; bound transforms follow animation through native drivers |
+| Sync Active Camera | Repair/rebind focus when needed; native camera information normally follows source changes automatically |
 | Manual Distance / Focus Offset | Set a distance or offset the camera/manual focus plane |
 | Half-width | Sharp distance on each side of the focus plane; twice this is the total sharp zone |
 | Foreground / Background | Enable either side independently |
 | Near / Far Falloff | Distance beyond the sharp zone needed to reach the maximum effect |
 | Radius (px) | Maximum filter size in output pixels, capped at 64; larger values cost more |
 | Strength | Blend with the original image |
-| Defocus (px) | Extra Gaussian softness blended through the focus mask before the selected filter; zero preserves the old look |
+| Defocus (px) | Extra softness using Defocus Shape, blended through the focus mask; zero preserves the old look |
 | Paint Filter / Simplification | Essentials brushwork with additional detail reduction |
 | Position Tracking | Optional native Depth/Position passes for world-space Paint brush placement; rerender after enabling |
 | Enable Effect | Native bypass that also supports keyframes |
@@ -94,7 +144,7 @@ You can choose the camera's **Focus Object** directly in Focus. A **Sync Active 
 | Threshold | Lower preserves more boundaries; higher allows more smoothing (Boundary Threshold) |
 | Depth Edges | Reject neighbors at different depths; high values can reduce smoothing on slopes (Depth Edge Protection) |
 
-Numeric controls, near/far toggles and Enable Effect can be keyframed. Defocus, Simplification and Edge Breakup also support keyframes. Method, preview, focus mode, mapping, guide source, quality and Position Tracking are configuration choices; they are not keyframe controls.
+Numeric controls with keyframe decorations, near/far toggles and Enable Effect can be keyframed. Brush Seed, bloom Texture Seed and Band Density are fixed shot settings. Defocus, Simplification and Edge Breakup also support keyframes. Method, preview, focus mode, mapping, guide source, quality and Position Tracking are configuration choices; they are not keyframe controls.
 
 Focus, strength, radius and Bilateral boundary controls can update from an existing render in the Compositor. Guide placement, material, camera pose and geometry changes require a new render.
 
@@ -118,13 +168,13 @@ The guide defines smoothing boundaries; it is not stamped onto the rendered imag
 
 ## Performance
 
-Only the selected method is connected to the result. Fast Bilateral disconnects the half-radius path. Focus/guide previews disconnect the filter result; disabled effects and zero radius/strength route through a native switch and set the effective filter radius to zero through a scalar node. Paint also switches its expensive image inputs to constants while bypassed, reducing unnecessary asset processing without replacing native animation. This reduces unnecessary filtering on bypassed frames while preserving native keyframes. Image-buffer handling and render-data generation still have a cost. Actual execution cost depends on Blender's compositor, image size, filter settings and hardware. Advanced > Compositor exposes Blender's scene CPU/GPU setting. GPU can reduce filtering time on supported hardware; compare the final look when switching backends. Active filtering and fully sharp Bilateral frames still incur their normal filter cost.
+Only the selected painterly method is connected to the result. Optional bokeh and bloom nodes are created on first use and reused without growth. Bloom uses one native glare pass; Soft mode disconnects band/noise processing. Zero bloom amount and disabled bokeh feed constant data to their optional image operations. Bokeh uses a scalar radius to avoid a costly variable-radius convolution. Fast Bilateral disconnects the half-radius path. Focus/guide previews disconnect the filter result; global disabling routes through a native switch; zero radius/strength sets the effective painterly radius to zero while optional bloom remains available. Paint also switches its expensive image inputs to constants while bypassed, reducing unnecessary asset processing without replacing native animation. This reduces unnecessary filtering on bypassed frames while preserving native keyframes. Image-buffer handling and render-data generation still have a cost. Actual execution cost depends on Blender's compositor, image size, filter settings and hardware. Advanced > Compositor exposes Blender's scene CPU/GPU setting. GPU can reduce filtering time on supported hardware; compare the final look when switching backends. Active filtering and fully sharp Bilateral frames still incur their normal filter cost.
 
-Compositor controls invalidate the compositor group; guide placement controls invalidate the shader group. Repeated refresh and unchanged wiring avoid redundant link edits. Multi-node validation builds its lookup index once per check. Numeric edits inspect only control bindings; detailed graph/material scans run during maintenance or on demand. Node layout builds an adjacency map once. There is no per-frame Python handler; a file-load handler upgrades intact older effect groups and restores focus bindings once when opening a file. Enabling the extension queues one nonpersistent initialization callback so an already open file can be checked after Blender's registration restrictions end. It stops after one run and is cancelled on disable or superseded by a file load.
+Compositor controls invalidate the compositor group; guide placement controls invalidate the shader group. Repeated refresh and unchanged wiring avoid redundant link edits. Core multi-node validation uses a lookup index. Numeric edits inspect only control bindings; detailed graph/material scans run during maintenance or on demand. Node layout builds an adjacency map once. There is no per-frame Python handler; a file-load handler upgrades intact older effect groups and restores focus bindings once when opening a file. Enabling the extension queues one nonpersistent initialization callback so an already open file can be checked after Blender's registration restrictions end. It stops after one run and is cancelled on disable or superseded by a file load.
 
 ## Limits and troubleshooting
 
-These are screen-space filters, not physically accurate optical blur or guaranteed flicker-free painted strokes. Coverage leaves the world background unchanged. Transparency, refraction, motion blur, antialiased silhouettes and overlapping geometry retain screen-space limitations. Incoming alpha is preserved, but that does not eliminate all color halos.
+These are screen-space filters, not physically accurate optical blur or guaranteed flicker-free painted strokes. Painterly focus leaves the world background unchanged; optional bloom can affect highlights across the image. Transparency, refraction, motion blur, antialiased silhouettes and overlapping geometry retain screen-space limitations. Incoming alpha is preserved, but that does not eliminate all color halos.
 
 Use one configured view layer and matching image framing per scene. Combining different scenes/layers, transformed images, stereo views or cropped inputs requires manual compositor work. Camera focus-distance and lens keyframes, moving focus objects and focus-bone animation use Blender's native evaluation; render each frame after changing framing or geometry. Focal length changes framing, while focus distance controls the sharp plane. Automatic camera-marker rebinding is not implemented: sync after camera/target changes and configure cuts as separate shots/scenes where needed. Shader AOVs in the viewport compositor are not assumed; use full renders.
 
@@ -138,7 +188,7 @@ See the [changelog](CHANGELOG.md) and [validation notes](docs/validation.md). Ru
 blender --background --factory-startup --python-exit-code 1 --python stylized_depth_of_field/tests/integration.py -- --work-dir ./test-output
 ```
 
-Add `--legacy-dir PATH_TO_UNPACKED_V1` after the work directory to run migration against the original v1 package. Add `--eevee` to include Eevee render checks on a machine with a supported graphics device. Pass `--previous-blend PATH_TO_V1_1_0_BLEND` to check a direct 1.1.0 saved-file upgrade. All test outputs use the resolved work directory. The suite uses disposable factory scenes; it does not save preferences or install add-ons.
+Add `--legacy-dir PATH_TO_UNPACKED_V1` after the work directory to run migration against the original v1 package. Add `--eevee` to include Eevee render checks on a machine with a supported graphics device. Pass `--previous-blend PATH_TO_V1_1_0_BLEND` to check a direct 1.1.0 saved-file upgrade. All test outputs use the resolved work directory. The established integration suite explicitly exercises the driver fallback; the v21 suite exercises native camera nodes. Both use disposable scenes. The suite uses disposable factory scenes; it does not save preferences or install add-ons.
 
 Build and validate the install ZIP with Python 3.11+ and Blender 5.2:
 
@@ -148,7 +198,11 @@ python scripts/build_release.py --blender blender
 
 Pass the full path to the Blender executable if it isn't on your PATH. The ZIP goes into `dist/`.
 
-For deterministic three-mode and Defocus compositor timings, run `stylized_depth_of_field/tests/performance.py` in background with `--threads 8` and `--work-dir ./performance-output`. It uses full-frame image inputs with a minimal Workbench carrier; its timings do not predict whole-scene render times.
+Run `stylized_depth_of_field/tests/v21.py` with `--work-dir ./v21-output` for native camera/bone/replacement tests, actual 1080p/4K sizing, broad bloom, keyed exposure/falloff, CPU/GPU agreement and save/reopen. An optional `--previous-blend PATH_TO_V2_BLEND` exercises transactional upgrade recovery.
+
+Run `stylized_depth_of_field/tests/v2.py` with `--work-dir ./v2-output` for native Cycles feature, bypass, repeated/reverse-frame, save/reopen and recovery tests. Add `--previous-blend PATH_TO_V1_3_BLEND` for late upgrade rollback checks.
+
+For deterministic three-mode and Defocus compositor timings, run `stylized_depth_of_field/tests/performance.py` in background with `--threads 8` and `--work-dir ./performance-output`. It uses full-frame image inputs with a minimal Workbench carrier; its timings do not predict whole-scene render times. Add `--v2` for optional aperture/bloom cases with HDR highlights, and `--device CPU` or `--device GPU` to choose the compositor backend. Compare a shot before switching devices; native Paint Filter can produce small backend differences around HDR edges.
 
 The source also contains `stylized_depth_of_field/tests/event_loop.py`. Run it without `--background`, using `--factory-startup --python stylized_depth_of_field/tests/event_loop.py -- --work-dir ./event-loop-output`, to verify deferred initialization and native undo snapshots. The timer harness explicitly pushes snapshots; it does not automate clicking panel buttons. Pass `--previous-blend PATH_TO_OLDER_BLEND` to also test the deferred upgrade of a file opened before enabling. It closes its disposable Blender session automatically.
 

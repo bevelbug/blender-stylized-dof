@@ -226,4 +226,4 @@ def run(addon, check, reset, render, LayoutProbe, Reporter, work_dir):
         nodes.feature_node = real_feature
     check('late feature-upgrade failure rolls back drivers, sockets and links', snapshot == (len(tree.nodes), len(tree.links), len(tree.animation_data.drivers), len(tree.interface.items_tree)) and nodes.GRAPH_VERSION not in tree)
     nodes.upgrade_effect(tree, s)
-    check('late feature upgrade can be retried', tree.get(nodes.GRAPH_VERSION) == 3 and not nodes.validate_effect(tree, s, configured=True).get('missing'))
+    check('late feature upgrade can be retried', tree.get(nodes.GRAPH_VERSION) == nodes.looks.VERSION and not nodes.validate_effect(tree, s, configured=True).get('missing'))

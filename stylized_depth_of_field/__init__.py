@@ -1,14 +1,14 @@
-"""Stylized Depth of Field 1.3.0 — Blender 5.2 extension."""
+"""Stylized Depth of Field 2.1.1 — Blender 5.2 extension."""
 import os
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, PointerProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
 from bpy.types import Operator, Panel, PropertyGroup
 from bpy_extras.io_utils import ImportHelper
 from . import nodes as ng
 from . import core
 from . import migration
 from .transaction import Journal
-from .ui import draw_panel, SDOF_OT_help, SDOF_OT_report, SDOF_OT_check
+from .ui import draw_panel, SDOF_OT_help, SDOF_OT_report, SDOF_OT_check, SDOF_OT_bloom_preview
 from bpy.app.handlers import persistent
 
 TAG, ROLE = ng.TAG, ng.ROLE
@@ -95,7 +95,7 @@ class SDOF_Settings(PropertyGroup):
     error_source: StringProperty(options={"HIDDEN"})
     last_report: StringProperty()
     enabled: BoolProperty(name="Enable Effect", default=True, update=update_enabled,
-                         description="Enable painterly focus. Turn off to pass through the original image; can be keyframed")
+                         description="Enable painterly focus and optional bloom. Turn off to pass through the original image; can be keyframed")
     scope: EnumProperty(name="Materials", items=[
         ("SCENE", "Entire Scene", "Existing materials on supported objects in the configured view layer"),
         ("SELECTED", "Selected Objects", "Existing materials on the selected objects; shared materials affect all their users")], default="SCENE", options=set(),
@@ -114,20 +114,84 @@ class SDOF_Settings(PropertyGroup):
     preview: EnumProperty(name="Preview", items=[
         ("RESULT", "Final Effect", "Composited result; choose this before saving a final render"),
         ("FOCUS", "Focus Mask", "Black stays sharp; white receives maximum effect"),
-        ("GUIDE", "Surface Guide", "Rendered brush AOV before depth protection; render again after changing the guide")], default="RESULT", options=set(), update=update_controls,
+        ("GUIDE", "Surface Guide", "Rendered brush AOV before depth protection; render again after changing the guide"),
+        ('BLOOM', 'Bloom Only', 'Show the isolated colored glow on black to adjust its reach and stepped falloff; affects saved output')], default="RESULT", options=set(), update=update_controls,
         description="Choose the final image or diagnostic render data. Preview selection also affects saved renders; return to Final Effect when finished")
     radius: FloatProperty(update=update_values, name="Radius (px)", default=5, min=0, max=64, soft_max=12,
-                          description="Maximum filter radius or Paint stroke size in output pixels. Start around 5 px for Bilateral/Kuwahara, or 12–20 for Paint. Larger values cost more; zero bypasses the entire effect")
+                          description="Maximum filter radius or Paint stroke size, in output pixels or reference pixels with resolution scaling. Start around 5 for Bilateral/Kuwahara or 12–20 for Paint. Zero skips painting while optional bloom remains available")
     strength: FloatProperty(update=update_values, name="Strength", default=1, min=0, max=1, subtype="FACTOR",
-                            description="Blend the painterly result with the original image in out-of-focus areas. Zero keeps the original; one applies the full effect")
+                            description="Blend painting into out-of-focus areas. Zero skips painting while optional bloom remains available; one applies the full painterly treatment")
     defocus: FloatProperty(update=update_values, name="Defocus (px)", default=0, min=0, max=64, soft_max=16,
                           description="Additional focus-mask-driven softness before the painterly filter. Zero preserves the original look. Larger values remove detail and cost more; supports keyframes")
+    protect_focus_edges: BoolProperty(name="Protect Sharp Edges", default=True, update=update_values,
+        description="Extend surrounding colors behind sharp silhouettes before Defocus and painting to reduce blurred outlines. Preserves the original sharp subject. Large blur and transparent edges remain approximations; off restores the previous filtering behavior")
+    scale_with_resolution: BoolProperty(name="Scale with Resolution", default=False, options=set(), update=update_values,
+        description="Scale filter/stroke size and Defocus by the actual input image width relative to Reference Width. At 1920 reference, 4K uses twice the pixel size. Bloom spread is already relative")
+    reference_width: IntProperty(name="Reference Width", default=1920, min=64, max=32768, options=set(), update=update_values,
+        description="Image width at which Radius/Stroke Size and Defocus are specified when resolution scaling is enabled. Uses actual input dimensions, including render percentage")
     paint_simplification: FloatProperty(update=update_values, name="Simplification", default=4, min=0, max=16, soft_max=8,
                                        description="Additional detail reduction inside Paint Filter. Zero disables its Kuwahara simplification; supports keyframes")
     paint_edge_breakup: FloatProperty(update=update_values, name="Edge Breakup", default=1, min=0, max=8, soft_max=3,
                                      description="Canvas-driven irregularity in Paint Filter edges. Start small for animation; supports keyframes")
     paint_tracking: BoolProperty(update=update_controls, name="Position Tracking", default=False,
                                 description="Map Paint Filter strokes using native Position and Depth passes. Enables those passes on the configured layer; render again. World-space tracking does not lock strokes to deforming or moving objects")
+    paint_style: EnumProperty(name="Brush Style", default='WATERCOLOR', options=set(), update=update_controls,
+        items=[('WATERCOLOR', 'Watercolor', 'Soft irregular washes'), ('OIL', 'Oil Paint', 'Denser layered brushwork'),
+               ('GEOMETRIC', 'Digital Geometric', 'Angular graphic brush shapes')],
+        description="Choose a built-in brush pattern from the bundled Paint Filter. Existing setups keep Watercolor")
+    paint_sharpness: FloatProperty(name="Brush Sharpness", default=0.6, min=0, max=1, update=update_values,
+        description="How closely smudged shapes follow the brush texture. Higher gives more distinct brush edges; supports keyframes")
+    paint_colors: FloatProperty(name="Color Variation", default=0.2, min=0, max=1, update=update_values,
+        description="Hue variation between strokes. Keep low for stable, faithful colors; supports keyframes")
+    paint_pooling: FloatProperty(name="Pigment Pooling", default=0.1, min=0, max=1, update=update_values,
+        description="Darken stroke edges like pooled pigment. High values can create outlines; supports keyframes")
+    paint_seed: IntProperty(name="Brush Seed", default=0, min=0, max=10000, options=set(), update=update_values,
+        description="Choose another fixed brush arrangement. Keep constant throughout an animation")
+    paint_canvas: EnumProperty(name="Canvas Type", default='CANVAS', options=set(), update=update_controls,
+        items=[('CANVAS', 'Canvas', 'Woven canvas texture'), ('PAPER', 'Rough Paper', 'Irregular paper grain'),
+               ('NONE', 'None', 'No canvas pattern or canvas-driven edge breakup')],
+        description="Underlying Paint Filter surface. None also removes canvas-driven edge breakup")
+    paint_canvas_scale: FloatProperty(name="Texture Scale", default=2, min=0.05, max=100, soft_max=10, update=update_values,
+        description="Canvas pattern frequency. Higher values give finer grain; supports keyframes")
+    paint_canvas_amount: FloatProperty(name="Texture Amount", default=0.15, min=0, max=1, update=update_values,
+        description="Blend canvas grain over painted areas. Zero hides the overlay while keeping canvas edge breakup; supports keyframes")
+    bokeh_shape: EnumProperty(name="Blur Shape", default='GAUSSIAN', options=set(), update=update_controls,
+        items=[('GAUSSIAN', 'Soft / Fast', 'Original Gaussian defocus'), ('ROUND', 'Round Bokeh', 'Circular aperture convolution'),
+               ('POLYGON', 'Aperture Bokeh', 'Polygonal aperture with blade and roundness controls')],
+        description="Shape of additional Defocus blur. Bokeh costs more at large radii; the selected painterly filter can reshape its highlights")
+    bokeh_blades: IntProperty(name="Blades", default=6, min=3, max=16, update=update_values,
+        description="Number of aperture sides for Aperture Bokeh; supports keyframes")
+    bokeh_rotation: FloatProperty(name="Rotation", default=0, subtype='ANGLE', update=update_values,
+        description="Rotate the aperture shape in the image plane; supports keyframes")
+    bokeh_roundness: FloatProperty(name="Roundness", default=0.2, min=0, max=1, update=update_values,
+        description="Curve aperture edges from a straight polygon to a circle; supports keyframes")
+    bloom_enabled: BoolProperty(name="Bloom", default=False, update=update_controls,
+        description="Add optional highlight glow. Bloom works independently of painterly Strength/Radius; Enable Effect still bypasses everything. Supports keyframes")
+    bloom_style: EnumProperty(name="Style", default='STEPPED', options=set(), update=update_controls,
+        items=[('SOFT', 'Soft', 'Smooth colored highlight glow'), ('STEPPED', 'Stepped Paint', 'Softened brightness bands with optional brush breakup')],
+        description="Choose smooth glow or stepped painterly washes. Stepping affects only the added glow")
+    bloom_amount: FloatProperty(name="Amount", default=0.25, min=0, max=32, soft_max=4, update=update_values,
+        description="Final glow intensity after stepping. For a wider visible halo use Glow Exposure or lower Falloff; Amount cannot recover glow removed by stepping. Zero bypasses bloom; supports keyframes")
+    bloom_spread: FloatProperty(name="Spread", default=0.08, min=0.001, max=1, soft_max=1, subtype='FACTOR', update=update_values,
+        description="Spatial glow reach relative to the image. The full 0–1 range is available; large spreads dilute small highlights, so raise Glow Exposure to reveal faint outer glow. Supports keyframes")
+    bloom_exposure: FloatProperty(name="Glow Exposure", default=0, min=-8, max=16, soft_min=0, soft_max=8, update=update_values,
+        description="Boost glow BEFORE stepping, in stops. Positive values reveal faint outer bands that Amount cannot recover. Try +2 to +5 for broad bloom. Zero preserves v2.0 brightness placement; supports keyframes")
+    bloom_falloff: FloatProperty(name="Falloff", default=1, min=0.15, max=4, soft_min=0.25, soft_max=2, update=update_values,
+        description="Shape glow brightness before stepping. Below 1 lifts faint tails for a fuller halo; above 1 concentrates glow. Try 0.5–0.8 for broad washes. Supports keyframes")
+    bloom_threshold: FloatProperty(name="Highlight Threshold", default=1, min=0, max=1000, soft_max=10, update=update_values,
+        description="Minimum scene-linear brightness contributing to bloom. Emission and bright reflections above 1 work well; supports keyframes")
+    bloom_steps: IntProperty(name="Band Density", default=4, min=1, max=16, soft_max=8, options=set(), update=update_values,
+        description="Brightness levels per stop, not an exact ring count. Try 2–4 for visible bands, then adjust Glow Exposure to place them. Keep fixed during a shot")
+    bloom_softness: FloatProperty(name="Edge Softness", default=0.65, min=0.02, max=1, update=update_values,
+        description="Blend band boundaries to reduce popping in motion. Low values make harder contour edges; supports keyframes")
+    bloom_breakup: FloatProperty(name="Painterly Breakup", default=0.25, min=0, max=1, update=update_values,
+        description="Subtle fixed brush irregularity along glow bands. Zero gives clean contours. High values may crawl during motion; supports keyframes")
+    bloom_texture_scale: FloatProperty(name="Texture Scale", default=6, min=0.05, max=100, soft_max=20, update=update_values,
+        description="Frequency of bloom breakup in screen coordinates or world units when tracked. Higher gives smaller texture features; supports keyframes")
+    bloom_seed: IntProperty(name="Texture Seed", default=0, min=0, max=10000, options=set(), update=update_values,
+        description="Fixed arrangement of the bloom breakup. Keep unchanged throughout an animation")
+    bloom_tracking: BoolProperty(name="Position Tracking", default=False, options=set(), update=update_controls,
+        description="Anchor band breakup using the Position pass on static surfaces. Rerender after enabling. Empty background uses screen coordinates; moving and deforming objects can slide through world-space texture")
     focus_mode: EnumProperty(name="Focus Source", items=[
         ("CAMERA", "Camera Focus", "Follow camera focus distance or its focus object"),
         ("MANUAL", "Manual Distance", "Use the distance below")], default="CAMERA", options=set(), update=update_focus,
@@ -201,7 +265,7 @@ class SDOF_OT_refresh(Operator):
 class SDOF_OT_sync(Operator):
     bl_idname = "sdof.sync_camera"
     bl_label = "Sync Active Camera"
-    bl_description = "Link focus to the current scene camera and its focus object/bone. Use after changing that selection; distance and target animation then follow through native drivers"
+    bl_description = "Repair or rebind camera focus when needed. Native camera data normally follows source changes automatically; manual and driver fallback bindings are retained"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -359,7 +423,7 @@ class SDOF_OT_restore_compositor(Operator):
 
 
 CLASSES = (SDOF_Settings, SDOF_OT_setup, SDOF_OT_refresh, SDOF_OT_sync, SDOF_OT_image,
-           SDOF_OT_remove, SDOF_OT_report, SDOF_OT_help, SDOF_OT_check, SDOF_OT_migrate, SDOF_OT_detach,
+           SDOF_OT_remove, SDOF_OT_report, SDOF_OT_help, SDOF_OT_check, SDOF_OT_bloom_preview, SDOF_OT_migrate, SDOF_OT_detach,
            SDOF_OT_compositing, SDOF_OT_restore_compositor,
            SDOF_PT_view, SDOF_PT_compositor)
 

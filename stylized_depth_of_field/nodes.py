@@ -1,5 +1,7 @@
 """Native Blender 5.2 shader/compositor builders. No render-time Python."""
 import bpy
+from . import looks
+from . import refinements, focus as camera_focus, edges
 
 TAG = "sdof_owner"
 ROLE = "sdof_role"
@@ -97,7 +99,10 @@ def validate_controls(tree, scene, shader=False, remember=True, resolved=None):
         for name, index, prop in PLACEMENT_CONTROLS:
             validate_property_driver(placement.inputs[name], scene, prop, index)
     else:
-        controls = {**EFFECT_CONTROLS, **(NEW_CONTROLS if tree.get(GRAPH_VERSION, 1) >= 3 else {})}
+        controls = {**EFFECT_CONTROLS, **(NEW_CONTROLS if tree.get(GRAPH_VERSION, 1) >= 3 else {}),
+                    **(looks.CONTROLS if tree.get(GRAPH_VERSION, 1) >= 4 else {}),
+                    **(refinements.CONTROLS if tree.get(GRAPH_VERSION, 1) >= 5 else {}),
+                    **(edges.CONTROLS if tree.get(GRAPH_VERSION, 1) >= 6 else {})}
         resolved = resolved or resolve(tree, {key: 'ShaderNodeValue' for key in controls}, remember)
         for key, prop in controls.items():
             validate_property_driver(resolved[key].outputs[0], scene, prop)
@@ -149,7 +154,7 @@ def validate_shader(tree, remember=True, settings=None):
 
 def validate_effect(tree, settings, remember=True, configured=False):
     version = tree.get(GRAPH_VERSION, 1)
-    if version > 3:
+    if version > looks.VERSION:
         raise RuntimeError('This effect was saved by a newer add-on. Update the add-on before editing it.')
     kinds = {"Mix Painterly Result": "ShaderNodeMixRGB", "Effect Bypass": "CompositorNodeSwitch",
              "Enabled Result": "ShaderNodeMath", "Effect Enabled": "ShaderNodeValue", "Focus Distance": "ShaderNodeValue"}
@@ -175,12 +180,18 @@ def validate_effect(tree, settings, remember=True, configured=False):
         kinds['Effective Radius'] = 'ShaderNodeMath'
     if version >= 3:
         kinds.update(DEFOCUS_NODES)
+    if version >= 4:
+        kinds.update({key: 'ShaderNodeValue' for key in looks.CONTROLS})
+    if version >= 5:
+        kinds.update({key: 'ShaderNodeValue' for key in refinements.CONTROLS})
+    if version >= 6:
+        kinds.update({key: 'ShaderNodeValue' for key in edges.CONTROLS})
     has_paint = any(n.get(KEY) == 'Paint Filter' for n in tree.nodes)
     if has_paint or (configured and settings.method == 'PAINT'):
         kinds.update(PAINT_NODES)
     resolved = resolve(tree, kinds, remember)
     validate_controls(tree, settings.id_data, remember=remember, resolved=resolved)
-    preview = {"FOCUS": "Covered Focus Mask", "GUIDE": "Render and Surface Data", "RESULT": "Preserve Original Alpha"}[settings.preview]
+    preview = {"FOCUS": "Covered Focus Mask", "GUIDE": "Render and Surface Data", "RESULT": "Preserve Original Alpha", 'BLOOM': 'Bloom Strength'}[settings.preview]
     for name in ("On", "Off", "Switch"):
         socket(resolved["Effect Bypass"].inputs, name)
     if settings.preview == "GUIDE":
@@ -207,7 +218,10 @@ def validate_effect(tree, settings, remember=True, configured=False):
             for name in (('Image', 'Size', 'Determinator', 'Threshold') if n.bl_idname == 'CompositorNodeBilateralblur' else ('Image', 'Size')):
                 if not socket(n.inputs, name).is_linked:
                     raise RuntimeError('Missing generated link into ' + key + ': ' + name + '. Restore it or rebuild the setup.')
-    radius_source = 'Effective Radius' if version >= 2 else 'Maximum Radius'
+    radius_source = 'Scaled Radius' if version >= 5 else 'Effective Radius' if version >= 2 else 'Maximum Radius'
+    if version >= 5:
+        resolved['Scaled Radius'] = find(tree, 'Scaled Radius', remember=remember)
+        resolved['Scaled Defocus'] = find(tree, 'Scaled Defocus', remember=remember)
     if version >= 2:
         require_link(tree, resolved['Maximum Radius'], 0, resolved['Effective Radius'], 0)
         require_link(tree, resolved['Enabled Result'], 0, resolved['Effective Radius'], 1)
@@ -219,13 +233,15 @@ def validate_effect(tree, settings, remember=True, configured=False):
             ('Boundary Threshold', 0, 'Bilateral', 'Threshold'), ('Boundary Threshold', 0, 'Bilateral Soft', 'Threshold'),
             ('Soft Radius', 0, 'Bilateral Soft', 'Size'), ('Depth Driven Radius', 0, 'Kuwahara', 'Size'),
             ('Effect Strength', 0, 'Effect Blend', 1), ('Effect Strength', 0, 'Positive Strength', 0),
-            ('Focus Distance', 0, 'Focus Plus Offset', 0), ('Focus Offset', 0, 'Focus Plus Offset', 1),
+            ('Focus Offset', 0, 'Focus Plus Offset', 1),
             ('Effect Enabled', 0, 'Enabled Radius', 0), ('Positive Radius', 0, 'Enabled Radius', 1),
             ('Enabled Radius', 0, 'Enabled Result', 0), ('Positive Strength', 0, 'Enabled Result', 1),
             ('Effect Bypass', 0, 'Result', 'Image'),
             ('Render and Surface Data', 'Image', 'Effect Bypass', 'Off'),
             ('Original Alpha', 'Alpha', 'Preserve Original Alpha', 'Alpha')):
         require_link(tree, resolved[source], out, resolved[sink], into)
+    if version < 5 or not camera_focus.active(tree):
+        require_link(tree, resolved['Focus Distance'], 0, resolved['Focus Plus Offset'], 0)
     for label in ('Near', 'Far'):
         for source, sink, into in (('Sharp Half Width', label + ' Outside Sharp Zone', 1),
                                    (label + ' Falloff', label + ' Safe Falloff', 0),
@@ -234,22 +250,25 @@ def validate_effect(tree, settings, remember=True, configured=False):
     if version >= 3:
         for source, out, sink, into in (
                 ('Defocus Amount', 0, 'Enabled Defocus', 0), ('Enabled Result', 0, 'Enabled Defocus', 1),
-                ('Enabled Defocus', 0, 'Depth Defocus', 'Size'),
-                ('Render and Surface Data', 'Image', 'Depth Defocus', 'Image'),
+                ('Scaled Defocus' if version >= 5 else 'Enabled Defocus', 0, 'Depth Defocus', 'Size'),
+                ('Protected Defocus Source' if version >= 6 else 'Render and Surface Data', 0 if version >= 6 else 'Image', 'Depth Defocus', 'Image'),
                 ('Covered Focus Mask', 0, 'Defocus Focus Blend', 0),
-                ('Render and Surface Data', 'Image', 'Defocus Focus Blend', 1),
-                ('Depth Defocus', 0, 'Defocus Focus Blend', 2),
+                ('Protected Defocus Source' if version >= 6 else 'Render and Surface Data', 0 if version >= 6 else 'Image', 'Defocus Focus Blend', 1),
                 ('Enabled Defocus', 0, 'Use Defocus', 0), ('Use Defocus', 0, 'Softened Source', 'Switch'),
                 ('Render and Surface Data', 'Image', 'Softened Source', 'Off'),
                 ('Defocus Focus Blend', 0, 'Softened Source', 'On')):
-            require_link(tree, resolved[source], out, resolved[sink], into)
+            require_link(tree, find(tree, source, remember=remember), out, resolved[sink], into)
+        source = resolved['Defocus Focus Blend'].inputs[2]
+        allowed = {'Depth Defocus', 'Aperture Blur'} if version >= 4 else {'Depth Defocus'}
+        if len(source.links) != 1 or source.links[0].from_node.get(KEY, source.links[0].from_node.name) not in allowed:
+            raise RuntimeError('The Defocus source was changed. Restore it or rebuild the setup.')
         for key in ('Bilateral', 'Bilateral Soft', 'Kuwahara'):
             require_link(tree, resolved['Softened Source'], 0, resolved[key], 'Image')
     if has_paint:
         from . import paint
         paint.validate(resolved['Paint Filter'])
         for source, out, sink, into in (
-                ('Effective Radius', 0, 'Paint Filter', 'Size'),
+                (radius_source, 0, 'Paint Filter', 'Size'),
                 ('Paint Simplification', 0, 'Active Paint Simplification', 0),
                 ('Enabled Result', 0, 'Active Paint Simplification', 1),
                 ('Active Paint Simplification', 0, 'Paint Filter', 'Simplification'),
@@ -270,19 +289,27 @@ def validate_effect(tree, settings, remember=True, configured=False):
             require_link(tree, gate, 0, resolved['Paint Filter'], key)
             if gate.inputs['Off'].is_linked:
                 raise RuntimeError('The Paint bypass input was changed. Restore its unlinked constant or rebuild the setup.')
+    if version >= 4:
+        looks.validate(tree, settings, configured)
+    if version >= 5:
+        refinements.validate(tree, settings)
+    if version >= 6:
+        edges.validate(tree)
     if configured:
         bilateral = 'Bilateral Focus Levels' if settings.quality == 'BALANCED' else 'Bilateral Fast Level'
         chosen = bilateral if settings.method == 'BILATERAL' else ('Paint Focus Blend' if settings.method == 'PAINT' else 'Kuwahara')
         require_link(tree, resolved[chosen], 0, resolved['Mix Painterly Result'], 2)
-        require_link(tree, resolved[preview], 'Guide AOV' if settings.preview == 'GUIDE' else 0, resolved['Effect Bypass'], 'On')
-        require_link(tree, resolved['Enabled Result' if settings.preview == 'RESULT' else 'Effect Enabled'],
+        preview_node = find(tree, preview, remember=remember)
+        require_link(tree, preview_node, 'Guide AOV' if settings.preview == 'GUIDE' else 0, resolved['Effect Bypass'], 'On')
+        switch = find(tree, 'Final Effect Enabled' if version >= 5 else 'Enabled Result', remember=remember) if settings.preview == 'RESULT' else resolved['Effect Enabled']
+        require_link(tree, switch,
                      0, resolved['Effect Bypass'], 'Switch')
     return resolved
 
 
 def upgrade_effect(tree, settings, journal=None):
     """Upgrade intact older graphs in place, retaining controls and animation."""
-    if tree.get(GRAPH_VERSION, 1) >= 3:
+    if tree.get(GRAPH_VERSION, 1) >= looks.VERSION:
         return
     from .transaction import Journal
     own_journal = journal is None
@@ -303,8 +330,25 @@ def upgrade_effect(tree, settings, journal=None):
             for key, into in (('Bilateral', 'Size'), ('Soft Radius', 0), ('Depth Driven Radius', 1)):
                 journal.wire(tree, effective.outputs[0], old[key].inputs[into])
             journal.property(tree, GRAPH_VERSION, 2)
-        add_defocus(tree, settings, journal)
-        journal.property(tree, GRAPH_VERSION, 3)
+        if tree.get(GRAPH_VERSION, 1) < 3:
+            add_defocus(tree, settings, journal)
+            journal.property(tree, GRAPH_VERSION, 3)
+        if tree.get(GRAPH_VERSION, 1) < 4:
+            looks.add_controls(tree, settings, journal)
+            looks.configure(tree, settings, journal)
+            journal.property(tree, GRAPH_VERSION, 4)
+        if tree.get(GRAPH_VERSION, 1) < 5:
+            refinements.upgrade(tree, settings, journal)
+            journal.property(tree, GRAPH_VERSION, 5)
+        if tree.get(GRAPH_VERSION, 1) < 6:
+            edges.upgrade(tree, settings, journal)
+        journal.property(tree, GRAPH_VERSION, looks.VERSION)
+        looks.configure(tree, settings, journal)
+        refinements.configure(tree, settings, journal)
+        bind_focus(tree, settings.id_data, journal)
+        # Upgrade can introduce a new final bypass source.
+        switch = find(tree, 'Final Effect Enabled' if settings.preview == 'RESULT' else 'Effect Enabled')
+        journal.wire(tree, switch.outputs[0], find(tree, 'Effect Bypass').inputs['Switch'])
         validate_effect(tree, settings, remember=False)
         tree.update_tag()
         if own_journal:
@@ -570,6 +614,8 @@ def focus_status(tree, scene):
     """Read-only check, including pointers Blender cleared after target deletion."""
     s = scene.sdof
     try:
+        if tree.get(GRAPH_VERSION, 1) >= 5 and camera_focus.active(tree):
+            return camera_focus.validate(tree, scene)
         out = find(tree, 'Focus Distance', 'ShaderNodeValue', remember=False).outputs[0]
         fc = binding(out)
         if not fc or fc.mute or not fc.driver.is_valid:
@@ -613,6 +659,16 @@ def focus_status(tree, scene):
 
 
 def bind_focus(tree, scene, journal=None):
+    if journal is None:
+        from .transaction import Journal
+        journal = Journal()
+        try:
+            bind_focus(tree, scene, journal)
+            journal.commit()
+        except Exception:
+            journal.rollback()
+            raise
+        return
     s = scene.sdof
     out = find(tree, "Focus Distance", "ShaderNodeValue").outputs[0]
     cam = scene.camera
@@ -625,6 +681,9 @@ def bind_focus(tree, scene, journal=None):
         bone = getattr(cam.data.dof, "focus_subtarget", "") if target else ""
         if bone and (target.type != "ARMATURE" or bone not in target.pose.bones):
             raise RuntimeError("The camera focus bone does not exist on its target. Correct it before syncing.")
+    if camera_focus.bind(tree, scene, journal):
+        return
+    journal.wire(tree, out, find(tree, 'Focus Plus Offset').inputs[0])
     if journal:
         journal.driver(out, 'default_value')
         for key in ('bound_camera', 'bound_target', 'bound_bone'):
@@ -792,9 +851,15 @@ def update_effect(tree, settings, journal=None):
             journal.rollback()
             raise
         return
+    if tree.get(GRAPH_VERSION, 1) >= looks.VERSION:
+        # Diagnose broken fixed links before reapplying configuration wiring.
+        validate_effect(tree, settings)
     upgrade_effect(tree, settings, journal)
     if settings.method == 'PAINT':
         add_paint(tree, settings, journal)
+    looks.configure(tree, settings, journal)
+    refinements.configure(tree, settings, journal)
+    edges.configure(tree, journal)
     n = validate_effect(tree, settings)
     connect = journal.wire if journal else wire
     bilateral = "Bilateral Focus Levels" if settings.quality == "BALANCED" else "Bilateral Fast Level"
@@ -804,10 +869,12 @@ def update_effect(tree, settings, journal=None):
         result = n["Covered Focus Mask"].outputs[0]
     elif settings.preview == "GUIDE":
         result = n["Render and Surface Data"].outputs["Guide AOV"]
+    elif settings.preview == 'BLOOM':
+        result = find(tree, 'Bloom Strength').outputs[0]
     else:
         result = n["Preserve Original Alpha"].outputs[0]
     connect(tree, result, n["Effect Bypass"].inputs["On"])
-    switch = n["Enabled Result"] if settings.preview == "RESULT" else n["Effect Enabled"]
+    switch = find(tree, 'Final Effect Enabled') if settings.preview == "RESULT" else n["Effect Enabled"]
     connect(tree, switch.outputs[0], n["Effect Bypass"].inputs["Switch"])
 
 
@@ -817,6 +884,8 @@ def check_capabilities():
         raise RuntimeError("Stylized Depth of Field requires Blender 5.2 or newer.")
     if "compositing_node_group" not in bpy.types.Scene.bl_rna.properties:
         raise RuntimeError("This Blender build has no compatible scene compositor API.")
-    for kind in ("CompositorNodeBilateralblur", "CompositorNodeKuwahara", "CompositorNodeBlur", "ShaderNodeOutputAOV"):
+    for kind in ("CompositorNodeBilateralblur", "CompositorNodeKuwahara", "CompositorNodeBlur", "ShaderNodeOutputAOV",
+                 "CompositorNodeBokehBlur", "CompositorNodeBokehImage", "CompositorNodeGlare", "CompositorNodeImageCoordinates",
+                 "CompositorNodeInpaint", "CompositorNodeDilateErode"):
         if getattr(bpy.types, kind, None) is None:
             raise RuntimeError("This Blender build is missing a required node: " + kind)

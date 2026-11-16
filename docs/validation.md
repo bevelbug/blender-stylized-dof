@@ -1,60 +1,25 @@
-# Validation — 1.3.0
+# Validation — 2.1.1
 
-Validated October 31, 2026 on Blender **5.2.0 LTS**, build `fbe6228777e7`, Windows x64. **368 background checks and 21 native event-loop/Undo snapshot checks passed.** Separate default-pixel comparisons, extension packaging/native enabling, six older native saved-file upgrades and offline Paint portability checks also pass. Other platforms and later Blender versions remain unverified.
+Checked on Windows with Blender 5.2.0 LTS (fbe6228777e7) and 5.3.0 (02f0899d78e3). The source suites passed **1,137 assertions**: 311 integration/recovery checks per Blender version, 98 focus-edge checks per version, 91 native-focus/sizing/bloom checks per version, and 137 optional-effects checks on 5.2. Counts include finite-render and repeated-frame assertions. Details are in [test-results.json](test-results.json).
 
-## Visual behavior and animation
+## Focus-edge correction
 
-- Cycles renders verify that Defocus changes out-of-focus pixels in Bilateral, Kuwahara and Paint while preserving the sharp region and incoming alpha. All three respect enabled, zero-strength and zero-radius bypasses with softness present.
-- Paint produces a distinct result from Kuwahara before additional softness. Its four input gates preserve active tracked pixels exactly while reducing bypass work. Tracked bypass is verified on CPU and GPU.
-- Camera focus-distance, lens, moving focus-object and pose-bone animation retain the earlier rendered regression coverage. New Paint, Simplification and Defocus keys render in repeated/reverse frame order on CPU and GPU; tracked Paint also renders with Eevee.
-- A saved tracked Paint scene reopens with its controls, drivers, local asset groups and passes. The extracted ZIP renders that scene with the installed asset file temporarily unavailable: no cache, network or original-machine asset path is required for an already-built file.
-- Ten retained fixtures — baseline, both Bilateral qualities, Kuwahara, focus mask, disabled/zero-radius/zero-strength and Eevee filter results — match v1.2.3 with **maximum pixel difference 0.0** at Defocus zero.
+Native compositor renders compare protection on/off for Bilateral, Kuwahara and Paint Filter, each with Gaussian, round and polygon blur. In a controlled HDR red-subject/blue-background fixture, the measured red halo outside the sharp silhouette falls by more than 99% in every combination. The fully sharp region matches the input within 0.00001, and incoming alpha is preserved.
 
-Defocus is Gaussian softening blended through the depth-derived focus mask before the selected painterly filter. It is not optical aperture simulation or an occlusion-correct reconstruction. Strong settings can introduce silhouette/color spill. Paint's Size is uniform within the filter; its result is blended through the focus mask. This avoids passing a varying image into its scalar size input.
+Additional fixtures cover antialiased curved silhouettes, a narrow sharp stem, varied alpha, and Defocus values of 8, 32 and 64. Fully sharp and fully defocused masks remain unchanged. Defocus zero matches protection off within 0.00001. CPU/GPU reference renders agree with a mean difference below 0.002. Moving silhouettes repeat deterministically in arbitrary order. These are selected synthetic tests, not a guarantee for all transparent, motion-blurred or subpixel geometry.
 
-## Tracking, ownership and recovery
+The extension uses existing focus/coverage data and native Inpaint/Dilate nodes; it does not add shader AOVs, render callbacks, temporal history or external dependencies. The protected source is used by the blur and subsequent painterly filter, while the final blend retains the original sharp image. Protection off restores the previous filtering path. Defocus zero bypasses the added processing. Active protection adds an image-extension operation; the patch does not claim zero overhead.
 
-- Position Tracking enables native Depth/Position on the configured layer and repairs their links on Refresh. Missing passes are diagnosed. Leaving tracked Paint, removal and copied-scene detachment release passes added by the add-on, while preserving pre-existing passes and user compositor consumers.
-- An injected late tracking-link failure restores native flags and ownership markers. Retrying Refresh succeeds. A failed first Paint load restores node/group/driver counts; same-named user groups are neither adopted nor deleted.
-- Older graphs upgrade in place. A late failure after new drivers, sockets and links exist restores the prior graph/schema and can be retried. Native source-node identity, existing camera/control drivers and saved settings are retained.
-- The CC0 asset is loaded only on first Paint selection. Removing the last setup frees imported unused helper groups; referenced groups remain. The bundled asset has no linked libraries, external image files or weak library references. Its original author/license metadata and pinned hashes are documented in THIRD_PARTY_NOTICES.md.
+## Animation, bloom and upgrades
 
-World-position tracking can help camera motion and consistent spatial placement. Objects moving/deforming through world space can still move through the strokes. This is not rest-position/deformation tracking for Alembic and does not guarantee flicker-free animation. Native passes need a new full render after being enabled.
+Camera focus-distance and lens keys, off-axis focus targets, rotated/scaled cameras, bone animation, camera/target replacement, manual focus and the fallback driver path pass. 1080p/4K sizing, broad bloom, bloom keyframes, alpha preservation and independent bloom enable/bypass remain covered. Bloom calculations and controls are unchanged; their image input can naturally differ when edge protection changes the painterly result.
 
-## Enabling, saved-file upgrades and Undo
+Real older saved graphs upgrade in place. An explicit v2.1 schema-5 fixture upgrades to schema 6 and validates; rolling back a staged upgrade restores the original nodes, links, drivers and version. Saved edge controls survive reopening without changing the rendered result. The older v2 fixture comparison disables edge protection to isolate unchanged bloom behavior. Schema-6 files need 2.1.1 or newer to edit their generated setup.
 
-The real restricted `addon_utils.enable()` path passes, retaining the earlier installation fix. Registration does not inspect scene data inside Blender's guard. A real 1.2.3 file opened before enabling receives its deferred upgrade once; clean disable removes the handler, timer and property schema.
+A repaired production room scene also rendered in Blender 5.3 at 1920 × 1080 with Cycles OptiX, CPU denoising, GPU compositing, and Lens Optics Lite 1.5.0 registered alongside the extension. Protection on/off comparisons used the same shot and settings. No original project, installed extension or personal preferences were overwritten. This does not validate the separate screenshot's source scene or a complete production animation.
 
-The separate event-loop test uses native Undo/Redo snapshots for compositor enabling/selection, copied-scene detachment, interrupted removal and complete tracked Paint removal. It restores asset groups, native passes and Defocus state. The timer harness explicitly pushes snapshots; actual panel-button Undo dispatch is not automated.
+## Limits
 
-The final installation ZIP is built/validated with Blender's tools, extracted to a separate workspace directory, enabled through Blender's loader, and tested with fresh setup/refresh/Paint/removal. Real 1.1.0, 1.1.1, 1.2.0, 1.2.1, 1.2.2 and 1.2.3 files render immediately after loading, then refresh without duplicating the upgraded graph or changing saved controls. Original v1 migration, linked brushes/actions/NLA and retryable cleanup remain in the full suite.
+Background extension estimates nearby visible colors; it cannot reconstruct hidden scenery. Extreme blur, large depth discontinuities, partial transparency, reflections and very thin details can still show artifacts. Bloom intentionally spreads highlights independently. World-position brush tracking is not deformation tracking for Alembic objects.
 
-Fault-injection checks deliberately print errors/recovery reports. The reset-heavy background suite can print Blender's existing Python-context shutdown warnings after all checks pass; the separate enabling/event-loop sessions are checked independently. No personal preferences or project files were saved.
-
-## 4K compositor fixture timings
-
-Blender 5.2.0 LTS, eight CPU threads or NVIDIA RTX 5080 GPU, 3840 × 2160, radius 8, median of three warm runs after a warm-up. Deterministic full-frame image/depth inputs use an empty Workbench scene as carrier. CPU and GPU runs are sequential, without competing Blender tests. These are compositor fixture times, not total production render times.
-
-| Method / state | CPU | GPU |
-| --- | ---: | ---: |
-| BILATERAL / active | 1.369 s | 0.216 s |
-| BILATERAL / defocus_8px | 1.496 s | 0.247 s |
-| BILATERAL / disabled | 0.248 s | 0.207 s |
-| KUWAHARA / active | 3.462 s | 0.222 s |
-| KUWAHARA / defocus_8px | 3.591 s | 0.234 s |
-| KUWAHARA / disabled | 0.286 s | 0.223 s |
-| PAINT / active | 12.431 s | 0.280 s |
-| PAINT / defocus_8px | 12.623 s | 0.288 s |
-| PAINT / disabled | 0.212 s | 0.218 s |
-
-Paint Filter is substantially more expensive on CPU; prefer the native GPU compositor on supported hardware for large Paint renders. CPU/GPU output is not promised to be byte-identical. Softness and large radii add work, and image-buffer/render-data overhead remains when bypassed. Earlier v1.2.3 speedup percentages are not generalized to this new pipeline.
-
-The bundled asset remains a shared, lazily loaded native graph; other modes do not load it. Native input switches reduce bypassed Paint processing by presenting constant inputs to expensive asset operations. No render-time downloads, external Python packages, custom compute backend or per-frame Python handlers were added.
-
-## Reproduce and remaining limits
-
-The [guide](../GUIDE.md#development-and-validation) documents the integration, event-loop, and performance tests. [Test results](test-results.json) record the named checks, default comparisons and raw timing samples. Tests use Blender's bundled Python/NumPy and disposable scenes.
-
-One camera and configured view layer per scene remain the supported workflow. Existing screen-space transparency, refraction, motion-blur, antialiased-edge, deforming-hair and complex-compositor limitations remain. Material discovery uses current-frame viewport evaluation; render-only/later-frame material changes can need Refresh or explicit material slots. Deleted/replaced generated nodes generally require restoring the original structure or rebuilding. Unexpected late removal failure retains Undo recovery rather than reconstructing every deleted resource automatically.
-
-Long production animations, other GPU vendors/backends, later Blender releases, stereo and alternative OCIO configurations remain outside the test matrix.
+The earlier room's GPU failure involving material AOVs and emissive light sampling is a separate issue. This patch keeps material setup unchanged; it does not remove the need for an already established scene workaround. Other operating systems, GPU vendors and Blender versions remain unverified. Deliberate fault-injection errors in test logs are expected.

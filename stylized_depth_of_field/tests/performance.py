@@ -23,6 +23,7 @@ parser.add_argument('--work-dir', type=Path, required=True)
 parser.add_argument('--device', choices=('CPU', 'GPU'), default='CPU')
 parser.add_argument('--width', type=int, default=3840)
 parser.add_argument('--height', type=int, default=2160)
+parser.add_argument('--v2', action='store_true', help='Benchmark the optional v2 effects with HDR highlights')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 args.work_dir.mkdir(parents=True, exist_ok=True)
 report = {'blender': bpy.app.version_string, 'build': bpy.app.build_hash.decode(),
@@ -46,6 +47,9 @@ yy, xx = np.ogrid[:args.height, :args.width]
 data = np.ones((args.height, args.width, 4), dtype=np.float32)
 checker = ((xx // 7 + yy // 7) % 2).astype(np.float32)
 data[:, :, 0], data[:, :, 1], data[:, :, 2] = .05 + checker * .8, .15 + (1 - checker) * .45, .1 + checker * .2
+if args.v2:
+    for x in (args.width//4, args.width//2, 3*args.width//4):
+        data[args.height//2-8:args.height//2+8, x-8:x+8, :3] = (12, 3.5, .5)
 instance = core.effect_instance(scene)
 for name, keys in (('Image', ('Image', 'Guide AOV')), ('Depth', ('Depth AOV',))):
     image = bpy.data.images.new('Benchmark ' + name, width=args.width, height=args.height, float_buffer=True)
@@ -76,16 +80,27 @@ def execute():
     return time.perf_counter() - started
 
 
-for method in ('BILATERAL', 'KUWAHARA', 'PAINT'):
+methods = ('PAINT',) if args.v2 else ('BILATERAL', 'KUWAHARA', 'PAINT')
+for method in methods:
     s.method = method
     assert not s.last_error, s.last_error
-    for state, enabled, strength, softness in (
+    cases = (
             ('active', True, 1, 0), ('defocus_8px', True, 1, 8),
-            ('disabled', False, 1, 8), ('zero_strength', True, 0, 8)):
+            ('disabled', False, 1, 8), ('zero_strength', True, 0, 8))
+    if args.v2:
+        cases = tuple((state, state != 'disabled', 1, 8) for state in
+                      ('defocus_8px', 'round_bokeh', 'soft_bloom', 'stepped_bloom', 'zero_bloom_amount', 'disabled'))
+    for state, enabled, strength, softness in cases:
+        if args.v2:
+            s.bokeh_shape = 'ROUND' if state == 'round_bokeh' else 'GAUSSIAN'
+            s.bloom_enabled = state in {'soft_bloom', 'stepped_bloom', 'zero_bloom_amount', 'disabled'}
+            s.bloom_style = 'SOFT' if state == 'soft_bloom' else 'STEPPED'
+            s.bloom_amount = 0 if state == 'zero_bloom_amount' else .35
         s.enabled, s.strength, s.defocus = enabled, strength, softness
         execute()
         times = [execute() for _ in range(3)]
         case = {'method': method, 'state': state, 'radius': s.radius, 'defocus': softness,
+                'bokeh_shape': s.bokeh_shape, 'bloom': s.bloom_enabled,
                 'seconds': times, 'median_seconds': statistics.median(times)}
         report['cases'].append(case)
         (args.work_dir / 'performance.json').write_text(json.dumps(report, indent=2), encoding='utf-8')

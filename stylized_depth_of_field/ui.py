@@ -9,6 +9,19 @@ from . import core, migration, nodes
 
 
 HELP_TOPICS = {
+    'LOOKS': ("Paint & Bokeh", (
+        ("Brush styles", "Paint Filter offers Watercolor, Oil Paint and Digital Geometric patterns from the bundled Blender Essentials asset. Brush Sharpness controls how closely shapes follow that pattern. Color Variation shifts hue between strokes; Pigment Pooling darkens their edges. Start with small changes."),
+        ("Canvas", "Canvas and Rough Paper add surface grain and drive Edge Breakup. Texture Amount controls the visible overlay; zero keeps the breakup. None removes the canvas pattern. Texture Scale changes grain frequency. Keep seeds fixed during animation. Custom images are reserved for a later version."),
+        ("Defocus shape", "Defocus Shape selects the additional blur before painting. Soft / Fast preserves the original Gaussian result. Round Bokeh uses a circular aperture; Aperture Bokeh exposes blade count, rotation and roundness. Raise Defocus above zero to see it. Painting can reshape the blurred highlights afterward."),
+        ("Blur limits", "Large aperture blur costs more. This compositor effect cannot recover hidden background behind a foreground silhouette and may show edge bleeding. Camera optical DOF can stay off; camera focus animation still drives the focus plane."),
+    )),
+    'BLOOM': ("Bloom & Animation", (
+        ("Highlight glow", "Enable Bloom for an additive glow over the painted result. Soft makes a smooth glow. Stepped Paint divides only the glow into brightness bands, preserving its hue and HDR range. Amount controls intensity, Spread controls reach, and Highlight Threshold chooses which scene-linear highlights contribute."),
+        ("Bigger, visible glow", "Spread controls spatial reach; its full 0 to 1 range is available. Broad glow from small highlights can be faint. Glow Exposure boosts it before stepping: try +2 to +5 stops. Falloff below 1 lifts the faint outer tail; try 0.5 to 0.8. Amount controls final intensity after stepping. Scene size does not directly set the halo size."),
+        ("Painted bands", "Use Preview Bloom Only to see the added glow on black. Band Density sets levels per brightness stop: try 2 to 4 for broad bands, then use Glow Exposure to place them. Edge Softness blends transitions; 0.3 to 0.6 is a useful range, with softer edges safer for motion. Painterly Breakup adds fixed irregularity. Soft mode ignores band and texture controls."),
+        ("Motion and tracking", "Position Tracking anchors breakup in world space on static surfaces. Render again after enabling it. Empty background uses screen coordinates. Moving or deforming objects can slide through the texture, and hard bands or noisy highlights can still flicker. Use a fixed seed and test a short animation before a long render."),
+        ("Scope and alpha", "Bloom affects highlights across the image, including the focused subject, and works even with painterly Radius or Strength zero. Enable Effect off bypasses everything; Amount zero bypasses bloom. Original alpha is preserved, so transparent areas can hide a halo in the final composite. Bloom Only is opaque for inspection and changes saved output: return to Final Effect before final rendering."),
+    )),
     'START': ("Getting Started", (
         ("Build once, then render", "Choose Cycles or Eevee, set the scene camera and assign node materials. Choose a material scope and click Build Setup. Render with F12 to generate the depth and surface guide data used by the effect."),
         ("Find your focus", "Start with Bilateral, Starter Patches and a radius around 5 px. Choose Preview > Focus Mask: black stays sharp, white receives the maximum effect. Adjust focus and falloffs, then return to Final Effect."),
@@ -18,8 +31,8 @@ HELP_TOPICS = {
     'FOCUS': ("Focus", (
         ("Camera or manual distance", "Camera Focus uses the active scene camera's focus distance or focus object/bone, even with optical DOF off. Manual Distance places the sharp plane at a distance along the camera's viewing axis. Focus Offset shifts either plane; positive values move it farther away."),
         ("A sharp zone with a gradual transition", "Sharp Half-width keeps that distance on each side of the focus plane fully sharp. Foreground and Background choose which side receives the effect. Each falloff is the additional distance beyond the sharp zone needed to reach maximum effect; larger values make a gentler transition."),
-        ("Changing the target", "Choose a Focus Object in this panel or the camera's data settings. After changing or deleting the camera, focus object or bone, use Sync Active Camera or Refresh Materials. A deleted object falls back to the camera distance on sync/refresh; a missing bone must be corrected first. Bound animation follows through native drivers. Use one camera per scene."),
-        ("Optical DOF", "If the camera's optical DOF is enabled, the extension stylizes an already blurred render. Disable optical DOF in the camera settings for painterly focus alone. The world background is left unchanged."),
+        ("Changing the target", "Choose a Focus Object in this panel or the camera's data settings. Native camera nodes follow camera, target and bone changes automatically where supported. A driver fallback remains available on other builds; Sync Active Camera or Refresh repairs that binding after source changes. A missing bone must be corrected. Use one camera per scene."),
+        ("Optical DOF", "If the camera's optical DOF is enabled, the extension stylizes an already blurred render. Disable optical DOF in the camera settings for painterly focus alone. Painterly focus leaves the world background unchanged; optional bloom can affect highlights anywhere in the image."),
     )),
     'GUIDE': ("Surface Guides", (
         ("A guide, rather than painted pixels", "Bilateral uses a surface pattern to decide where smoothing can cross boundaries. The pattern is not stamped onto the image. Starter Patches are procedural and need no external file. Kuwahara follows rendered image edges and ignores the surface guide."),
@@ -28,14 +41,15 @@ HELP_TOPICS = {
         ("Placement and boundaries", "Higher Tile U/V values make smaller patches; higher V than U elongates starter patches horizontally. Rotation changes their direction. Rerender after placement changes. In Advanced, Guide Weight weights pattern boundaries, Threshold controls tolerance, and Depth Edges protects depth differences."),
     )),
     'PERFORMANCE': ("Quality & Performance", (
-        ("Stronger defocus", "Defocus adds mask-driven softness before the selected painterly filter. Zero preserves the previous look; try 4 to 8 pixels for stronger loss of detail. The sharp zone and incoming alpha are retained. Strength still controls the final blend; Radius zero bypasses the entire effect."),
-        ("Paint Filter", "Paint Filter uses Pau Homs' Blender Essentials asset, bundled locally under CC0. Stroke Size sets its uniform screen-space size; the focus mask blends it into the image. Simplification removes more detail. Edge Breakup and depth protection are in Advanced. The surface guide is used only by Bilateral."),
-        ("Position tracking", "Advanced > Position Tracking uses native Position and Depth passes on the configured layer; render again after enabling it. It maps brush patterns through world positions, which can help with camera movement and different object sizes. Objects moving or deforming through that space can still move through the strokes; this is not deformation tracking or guaranteed flicker removal. Passes added by the add-on are released when tracking is unused, unless your compositor also uses them."),
-        ("Start small", "Radius is measured in output pixels. Larger radii and larger renders increase filtering cost. Zero strength, zero radius and a disabled effect pass through the original image and reduce filter work. Render data and compositor overhead still have a cost."),
+        ("Stronger defocus", "Defocus adds mask-driven softness before painting. Zero preserves the previous look; try 4 to 8 pixels. The sharp zone and alpha are retained. Strength or Radius zero bypasses painting while optional bloom remains available. Enable Effect off bypasses everything."),
+        ("Resolution scaling", "Advanced > Scale with Resolution keeps filter/stroke and Defocus size proportional to the actual input image width. Reference Width 1920 means a 3840-wide image uses twice the pixel radius. Render percentage and upstream image sizes are respected. Leave it off for fixed pixel sizes. Bloom Spread is already relative to the image."),
+        ("Paint Filter", "Paint Filter uses Pau Homs' Blender Essentials asset, bundled locally under CC0. Stroke Size sets its uniform screen-space size; the focus mask blends it into the image. Simplification removes more detail. Brush and Canvas contain the style controls; depth protection is in Advanced. The surface guide is used only by Bilateral."),
+        ("Position tracking", "Brush > Position Tracking uses native Position and Depth passes on the configured layer; render again after enabling it. It maps brush patterns through world positions, which can help with camera movement and different object sizes. Objects moving or deforming through that space can still move through the strokes; this is not deformation tracking or guaranteed flicker removal. Passes are shared with optional bloom tracking and released when unused, unless your compositor also uses them."),
+        ("Start small", "Radius is measured in output pixels, or reference pixels when resolution scaling is on. Larger radii and renders cost more. Zero strength/radius reduces painterly filtering; zero bloom Amount skips glow. Enable Effect off passes through the original image. Render data and compositor overhead still have a cost."),
         ("Compositor device", "Advanced > Compositor uses Blender's native CPU/GPU choice for this scene. Try GPU for large images on supported hardware. Availability and speed depend on Blender and your device. Setup and refresh preserve this choice; compare your final renders before switching a production job."),
         ("Bilateral quality", "Advanced > Quality offers Balanced, with two filter sizes for a smoother focus transition, and Fast, with one filter pass and a different transition. Use Fast when you need a lower filtering cost. Actual speed depends on Blender, resolution and hardware."),
         ("Render data", "AOVs are extra render outputs carrying surface guide, depth and coverage. Use a full F12 render for these outputs; viewport compositor support is not assumed. The configured view layer is listed in Setup & Maintenance."),
-        ("Keep final renders on Final Effect", "Focus Mask and Surface Guide previews also change the saved render output. Return to Preview > Final Effect before producing a final image or animation. There are no per-frame Python handlers."),
+        ("Keep final renders on Final Effect", "Focus Mask, Surface Guide and Bloom Only previews also change saved output. Return to Preview > Final Effect before producing a final image or animation. There are no per-frame Python handlers."),
     )),
     'TROUBLE': ("Troubleshooting", (
         ("Missing or weak effect", "Enable the effect, choose Final Effect and use a nonzero radius and strength. Render again after building or changing the guide. Check Focus Mask for the sharp zone, and Surface Guide for missing patterns. If Bilateral is too weak, raise Threshold or reduce Depth Edges in Advanced."),
@@ -130,6 +144,26 @@ class SDOF_OT_check(Operator):
             paragraph(self.layout, line, width=82)
 
 
+class SDOF_OT_bloom_preview(Operator):
+    bl_idname = 'sdof.preview_bloom'
+    bl_label = 'Preview Bloom'
+    bl_description = 'Toggle isolated glow on black to see its bands and reach. This changes saved render output too; return to Final Effect for final renders'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            core.check_owner(context.scene)
+            s = context.scene.sdof
+            s.preview = 'RESULT' if s.preview == 'BLOOM' else 'BLOOM'
+            if s.last_error:
+                self.report({'ERROR'}, s.last_error)
+                return {'CANCELLED'}
+            return {'FINISHED'}
+        except RuntimeError as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+
+
 def draw_panel(layout, context):
     scene, s = context.scene, context.scene.sdof
     ready, width = core.installed(scene), panel_width(context)
@@ -176,8 +210,13 @@ def draw_panel(layout, context):
         layout.operator('sdof.setup', icon='NODETREE')
     else:
         layout.prop(s, 'method')
-        layout.prop(s, 'radius', text="Stroke Size (px)" if s.method == 'PAINT' else "Radius (px)")
-        layout.prop(s, 'defocus')
+        if s.method == 'PAINT':
+            layout.prop(s, 'paint_style')
+        units = ' (ref px)' if s.scale_with_resolution else ' (px)'
+        layout.prop(s, 'radius', text=("Stroke Size" if s.method == 'PAINT' else "Radius") + units)
+        layout.prop(s, 'defocus', text='Defocus' + units)
+        if s.defocus > 0:
+            layout.prop(s, 'protect_focus_edges')
         if s.method == 'PAINT':
             layout.prop(s, 'paint_simplification')
         layout.prop(s, 'strength', slider=True)
@@ -202,6 +241,8 @@ def draw_panel(layout, context):
             else:
                 body.prop(dof, 'focus_distance', text="Distance")
             status = nodes.focus_status(s.effect_tree, scene) if s.effect_tree else ''
+            if s.effect_tree and nodes.camera_focus.active(s.effect_tree):
+                paragraph(body, 'Focus follows native camera data.', width)
             if status:
                 paragraph(body, status, width, 'INFO')
                 body.operator('sdof.sync_camera', icon='FILE_REFRESH')
@@ -222,6 +263,64 @@ def draw_panel(layout, context):
         col.active = s.far_enabled
         col.prop(s, 'far_falloff', text="Far Falloff")
 
+    if ready:
+        body = section(layout, 'sdof_aperture', "Defocus Shape", 'CAMERA_DATA', closed=True)
+        if body:
+            body.prop(s, 'bokeh_shape')
+            if s.bokeh_shape == 'POLYGON':
+                body.prop(s, 'bokeh_blades')
+                body.prop(s, 'bokeh_rotation')
+                body.prop(s, 'bokeh_roundness', slider=True)
+            if s.defocus == 0:
+                paragraph(body, "Raise Defocus to see the blur shape.", width, 'INFO')
+
+        if s.method == 'PAINT':
+            body = section(layout, 'sdof_brush', "Brush", 'BRUSH_DATA', closed=True)
+            if body:
+                body.prop(s, 'paint_sharpness', slider=True)
+                body.prop(s, 'paint_colors', slider=True)
+                body.prop(s, 'paint_pooling', slider=True)
+                body.prop(s, 'paint_seed')
+                body.prop(s, 'paint_tracking')
+                if s.paint_tracking:
+                    paragraph(body, "Tracking needs a new F12 render after enabling.", width, 'INFO')
+            body = section(layout, 'sdof_canvas', "Canvas", 'TEXTURE', closed=True)
+            if body:
+                body.prop(s, 'paint_canvas')
+                col = body.column()
+                col.active = s.paint_canvas != 'NONE'
+                col.prop(s, 'paint_canvas_amount', slider=True)
+                col.prop(s, 'paint_canvas_scale')
+                col.prop(s, 'paint_edge_breakup')
+
+        header, body = layout.panel('sdof_bloom', default_closed=True)
+        header.prop(s, 'bloom_enabled')
+        if body:
+            col = body.column()
+            col.active = s.bloom_enabled
+            col.prop(s, 'bloom_style')
+            col.operator('sdof.preview_bloom', text='Back to Final Effect' if s.preview == 'BLOOM' else 'Preview Bloom Only', icon='HIDE_OFF')
+            col.prop(s, 'bloom_amount')
+            col.prop(s, 'bloom_spread', slider=True)
+            col.prop(s, 'bloom_exposure')
+            col.prop(s, 'bloom_falloff')
+            col.prop(s, 'bloom_threshold')
+            if s.bloom_style == 'STEPPED':
+                col.prop(s, 'bloom_steps')
+                col.prop(s, 'bloom_softness', slider=True)
+                col.prop(s, 'bloom_breakup', slider=True)
+                detail = section(col, 'sdof_bloom_texture', "Texture", closed=True)
+                if detail:
+                    detail.prop(s, 'bloom_texture_scale')
+                    detail.prop(s, 'bloom_seed')
+                    detail.prop(s, 'bloom_tracking')
+                    if s.bloom_tracking:
+                        paragraph(detail, "Static world-space tracking. Rerender after enabling.", width, 'INFO')
+            if s.preview == 'BLOOM':
+                paragraph(body, 'Showing glow on black. Return to Final Effect before final rendering.', width, 'INFO')
+            if scene.render.film_transparent:
+                paragraph(body, 'Final output preserves alpha; transparent areas can hide the halo. Bloom Only shows the full glow.', width, 'INFO')
+
     if s.method == 'BILATERAL':
         body = section(layout, 'sdof_guide', "Surface Guide", 'TEXTURE', closed=True)
         if body:
@@ -241,6 +340,9 @@ def draw_panel(layout, context):
         body = section(layout, 'sdof_advanced', "Advanced", 'PREFERENCES', closed=True)
         if body:
             body.prop(scene.render, 'compositor_device', text="Compositor")
+            body.prop(s, 'scale_with_resolution')
+            if s.scale_with_resolution:
+                body.prop(s, 'reference_width')
             if s.method == 'BILATERAL':
                 body.prop(s, 'quality')
                 body.separator()
@@ -248,11 +350,7 @@ def draw_panel(layout, context):
                 body.prop(s, 'threshold', text="Threshold")
                 body.prop(s, 'edge_protection', text="Depth Edges")
             elif s.method == 'PAINT':
-                body.prop(s, 'paint_edge_breakup')
                 body.prop(s, 'edge_protection', text="Depth Edges")
-                body.prop(s, 'paint_tracking')
-                if s.paint_tracking:
-                    paragraph(body, 'Tracking needs a new F12 render after enabling.', width, 'INFO')
 
     if ready or s.token:
         body = section(layout, 'sdof_maintenance', "Setup & Maintenance", 'TOOL_SETTINGS', closed=True)
